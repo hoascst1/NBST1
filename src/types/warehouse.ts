@@ -13,10 +13,26 @@ export type WarehouseModuleId =
   | 'lich-su-xuat-nhap'
   | 'bao-cao-ton-kho'
   | 'bao-cao-nxt'
+  | 'theo-doi-vat-tu'
   | 'danh-muc-vat-tu'
   | 'vat-tu-tieu-hao'
   | 'cong-cu-dung-cu'
   | 'danh-sach-kho';
+
+export interface MaterialTrackingItem {
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  department: string;
+  supplier?: string;
+  requestDate: string; // YYYY-MM-DD
+  expectedDate?: string; // YYYY-MM-DD
+  status: 'Đã mua' | 'Chưa mua' | 'Không mua';
+  poNumber?: string;
+  note?: string;
+}
 
 export type ModuleGroupId = 'inout' | 'reports' | 'settings';
 

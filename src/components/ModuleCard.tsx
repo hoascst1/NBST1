@@ -10,6 +10,7 @@ import {
   Fuel,
   Wrench,
   Warehouse,
+  PackageSearch,
   Star,
   ArrowUpRight,
   LucideIcon,
@@ -33,6 +34,7 @@ const iconComponentMap: Record<string, LucideIcon> = {
   Fuel,
   Wrench,
   Warehouse,
+  PackageSearch,
 };
 
 export const ModuleCard: React.FC<ModuleCardProps> = ({

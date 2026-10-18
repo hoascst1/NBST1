@@ -25,6 +25,7 @@ import {
   ClipboardList,
   ClipboardCheck,
   History,
+  PackageSearch,
 } from 'lucide-react';
 import { WarehouseModuleId, WarehouseModule } from '../types/warehouse';
 import {
@@ -38,7 +39,9 @@ import {
   MOCK_CONSUMABLES,
   MOCK_TOOLS,
   MOCK_WAREHOUSES,
+  MOCK_MATERIAL_TRACKING,
 } from '../data/warehouseData';
+import { MaterialTrackingItem } from '../types/warehouse';
 import { CreateModal } from './CreateModal';
 
 interface ModuleDetailViewProps {
@@ -56,12 +59,36 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [movementFilter, setMovementFilter] = useState('ALL');
   const [timeFilter, setTimeFilter] = useState<'ALL' | 'TODAY' | 'MONTH' | 'YEAR'>('ALL');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [purchaseStatusFilter, setPurchaseStatusFilter] = useState<'ALL' | 'Đã mua' | 'Chưa mua' | 'Không mua'>('ALL');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedSlipDetail, setSelectedSlipDetail] = useState<any | null>(null);
 
   // Status badge styling helper
   const renderStatusBadge = (status: string) => {
     switch (status) {
+      case 'Đã mua':
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2.5 py-0.5 rounded-full">
+            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+            Đã mua
+          </span>
+        );
+      case 'Chưa mua':
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+            <Clock className="w-3 h-3 text-amber-600" />
+            Chưa mua
+          </span>
+        );
+      case 'Không mua':
+        return (
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full">
+            <X className="w-3 h-3 text-slate-400" />
+            Không mua
+          </span>
+        );
       case 'Đã duyệt':
       case 'Đã phê duyệt':
       case 'Hoàn tất':
@@ -564,6 +591,119 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
         );
       }
 
+      case 'theo-doi-vat-tu': {
+        const filtered = MOCK_MATERIAL_TRACKING.filter((item) => {
+          const q = filterQuery.toLowerCase().trim();
+          const matchQuery =
+            !q ||
+            item.code.toLowerCase().includes(q) ||
+            item.name.toLowerCase().includes(q) ||
+            item.department.toLowerCase().includes(q) ||
+            (item.supplier && item.supplier.toLowerCase().includes(q)) ||
+            (item.poNumber && item.poNumber.toLowerCase().includes(q)) ||
+            (item.note && item.note.toLowerCase().includes(q));
+
+          const matchStatus =
+            purchaseStatusFilter === 'ALL' || item.status === purchaseStatusFilter;
+
+          const matchStartDate = !startDate || item.requestDate >= startDate;
+          const matchEndDate = !endDate || item.requestDate <= endDate;
+
+          return matchQuery && matchStatus && matchStartDate && matchEndDate;
+        });
+
+        return (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100/90 text-slate-700 border-b border-slate-200 font-semibold uppercase tracking-wider text-[11px]">
+                  <th className="py-3 px-4 w-12 text-center">STT</th>
+                  <th className="py-3 px-4 min-w-[130px]">Mã vật tư</th>
+                  <th className="py-3 px-4 min-w-[220px]">Tên quy cách vật tư</th>
+                  <th className="py-3 px-4 text-center">ĐVT</th>
+                  <th className="py-3 px-4 text-right">Số lượng</th>
+                  <th className="py-3 px-4 min-w-[150px]">Đơn vị đề xuất</th>
+                  <th className="py-3 px-4 min-w-[180px]">Nhà cung cấp / Đơn vị thực hiện</th>
+                  <th className="py-3 px-4 text-center">Ngày đề xuất</th>
+                  <th className="py-3 px-4 text-center">Dự kiến về kho</th>
+                  <th className="py-3 px-4 text-center">Trạng thái</th>
+                  <th className="py-3 px-4 min-w-[110px]">Số PO / HĐ</th>
+                  <th className="py-3 px-4 min-w-[200px]">Ghi chú tiến độ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="py-12 text-center text-slate-400">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <PackageSearch className="w-8 h-8 text-slate-300" />
+                        <span className="font-medium text-slate-500">
+                          Không tìm thấy vật tư phù hợp với điều kiện lọc
+                        </span>
+                        {(filterQuery || startDate || endDate || purchaseStatusFilter !== 'ALL') && (
+                          <button
+                            onClick={() => {
+                              setFilterQuery('');
+                              setStartDate('');
+                              setEndDate('');
+                              setPurchaseStatusFilter('ALL');
+                            }}
+                            className="mt-1 text-xs text-blue-600 hover:underline cursor-pointer font-semibold"
+                          >
+                            Xóa tất cả bộ lọc
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filtered.map((row, idx) => (
+                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="py-3 px-4 text-center font-mono text-slate-400 text-[11px]">
+                        {idx + 1}
+                      </td>
+                      <td className="py-3 px-4 font-mono font-bold text-blue-700">
+                        {row.code}
+                      </td>
+                      <td className="py-3 px-4 font-semibold text-slate-900">
+                        {row.name}
+                      </td>
+                      <td className="py-3 px-4 text-center text-slate-600 font-medium">
+                        {row.unit}
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono font-bold tabular-nums text-slate-900">
+                        {row.quantity}
+                      </td>
+                      <td className="py-3 px-4 text-slate-700 font-medium">
+                        {row.department}
+                      </td>
+                      <td className="py-3 px-4 text-slate-600">
+                        {row.supplier || <span className="text-slate-400 italic">Chưa chỉ định</span>}
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono tabular-nums text-slate-600">
+                        {row.requestDate.split('-').reverse().join('/')}
+                      </td>
+                      <td className="py-3 px-4 text-center font-mono tabular-nums text-slate-600">
+                        {row.expectedDate ? row.expectedDate.split('-').reverse().join('/') : <span className="text-slate-400">-</span>}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {renderStatusBadge(row.status)}
+                      </td>
+                      <td className="py-3 px-4 font-mono font-semibold text-indigo-700">
+                        {row.poNumber || <span className="text-slate-400 font-normal">-</span>}
+                      </td>
+                      <td className="py-3 px-4 text-slate-600 italic">
+                        {row.note || '-'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
       case 'danh-muc-vat-tu': {
         const filtered = MOCK_MATERIALS.filter(
           (m) =>
@@ -770,96 +910,239 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
     <div className="space-y-4 animate-in fade-in duration-150">
       {/* Ô tóm tắt trên cùng: Ẩn hoàn toàn đối với Phiếu kho theo yêu cầu */}
       {module.id !== 'phieu-kho' && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-xs font-medium text-slate-500 block mb-1">
-              {module.id === 'lich-su-xuat-nhap' ? 'Tổng biến động' : 'Tổng bản ghi'}
-            </span>
-            <div className="text-lg font-bold font-mono tabular-nums text-slate-900">
-              {module.itemCount}
-            </div>
-          </div>
+        <div
+          className={`grid grid-cols-1 ${
+            module.id === 'theo-doi-vat-tu' ? 'sm:grid-cols-4' : 'sm:grid-cols-3'
+          } gap-3`}
+        >
+          {module.id === 'theo-doi-vat-tu' ? (
+            <>
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-xs font-medium text-slate-500 block mb-1">
+                  Tổng vật tư theo dõi
+                </span>
+                <div className="text-lg font-bold font-mono tabular-nums text-slate-900">
+                  {MOCK_MATERIAL_TRACKING.length} mặt hàng
+                </div>
+              </div>
+              <div className="bg-white p-3.5 rounded-xl border border-emerald-100 bg-emerald-50/20 shadow-2xs">
+                <span className="text-xs font-medium text-emerald-700 block mb-1">
+                  Đã mua về kho
+                </span>
+                <div className="text-lg font-bold font-mono tabular-nums text-emerald-700">
+                  {MOCK_MATERIAL_TRACKING.filter((i) => i.status === 'Đã mua').length} mục
+                </div>
+              </div>
+              <div className="bg-white p-3.5 rounded-xl border border-amber-100 bg-amber-50/20 shadow-2xs">
+                <span className="text-xs font-medium text-amber-700 block mb-1">
+                  Chưa mua (Đang xử lý)
+                </span>
+                <div className="text-lg font-bold font-mono tabular-nums text-amber-700">
+                  {MOCK_MATERIAL_TRACKING.filter((i) => i.status === 'Chưa mua').length} mục
+                </div>
+              </div>
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-xs font-medium text-slate-500 block mb-1">
+                  Không mua / Tận dụng kho
+                </span>
+                <div className="text-lg font-bold font-mono tabular-nums text-slate-600">
+                  {MOCK_MATERIAL_TRACKING.filter((i) => i.status === 'Không mua').length} mục
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-xs font-medium text-slate-500 block mb-1">
+                  {module.id === 'lich-su-xuat-nhap' ? 'Tổng biến động' : 'Tổng bản ghi'}
+                </span>
+                <div className="text-lg font-bold font-mono tabular-nums text-slate-900">
+                  {module.itemCount}
+                </div>
+              </div>
 
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-xs font-medium text-slate-500 block mb-1">
-              {module.id === 'de-xuat-vat-tu'
-                ? 'Đề xuất cần duyệt'
-                : module.id === 'kiem-ke-kho'
-                ? 'Lệch cần đối chiếu'
-                : 'Ưu tiên xử lý'}
-            </span>
-            <div className="text-lg font-bold font-mono tabular-nums text-amber-600">
-              {module.id === 'kiem-ke-kho' ? '2 mục' : '3 phiếu'}
-            </div>
-          </div>
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-xs font-medium text-slate-500 block mb-1">
+                  {module.id === 'de-xuat-vat-tu'
+                    ? 'Đề xuất cần duyệt'
+                    : module.id === 'kiem-ke-kho'
+                    ? 'Lệch cần đối chiếu'
+                    : 'Ưu tiên xử lý'}
+                </span>
+                <div className="text-lg font-bold font-mono tabular-nums text-amber-600">
+                  {module.id === 'kiem-ke-kho' ? '2 mục' : '3 phiếu'}
+                </div>
+              </div>
 
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-            <span className="text-xs font-medium text-slate-500 block mb-1">Cập nhật gần nhất</span>
-            <div className="text-sm font-semibold font-mono tabular-nums text-slate-800">
-              17/10/2026
-            </div>
-          </div>
+              <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+                <span className="text-xs font-medium text-slate-500 block mb-1">
+                  Cập nhật gần nhất
+                </span>
+                <div className="text-sm font-semibold font-mono tabular-nums text-slate-800">
+                  17/10/2026
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
       {/* Table Section */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-        {/* Table filter toolbar: Nút Lập phiếu kho mới đặt cạnh ô tìm kiếm, bỏ Đơn vị quản lý */}
-        <div className="p-3.5 border-b border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/50">
-          <div className="flex items-center gap-2.5 flex-1">
-            <button
-              onClick={onBackToHub}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer shrink-0"
-              title="Quay lại danh sách phân hệ Kho"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
+        {/* Table filter toolbar */}
+        {module.id === 'theo-doi-vat-tu' ? (
+          <div className="p-3.5 border-b border-slate-200/80 flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-slate-50/50">
+            <div className="flex items-center gap-2.5 flex-1 flex-wrap">
+              {/* Nút quay lại (mũi tên) */}
+              <button
+                onClick={onBackToHub}
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer shrink-0"
+                title="Quay lại danh sách phân hệ Kho"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
 
-            <div className="relative flex-1 max-w-sm">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-                <Search className="w-3.5 h-3.5" />
+              {/* Ô tìm kiếm */}
+              <div className="relative flex-1 min-w-[200px] max-w-sm">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Search className="w-3.5 h-3.5" />
+                </div>
+                <input
+                  type="text"
+                  value={filterQuery}
+                  onChange={(e) => setFilterQuery(e.target.value)}
+                  placeholder="Tìm kiếm vật tư theo mã, tên, quy cách..."
+                  className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
               </div>
-              <input
-                type="text"
-                value={filterQuery}
-                onChange={(e) => setFilterQuery(e.target.value)}
-                placeholder="Lọc dữ liệu theo từ khóa..."
-                className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-              />
+
+              {/* Chọn từ ngày đến ngày */}
+              <div className="flex items-center gap-1.5 text-xs bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-slate-700 shrink-0 shadow-2xs">
+                <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="text-[11px] text-slate-400 font-medium">Từ ngày:</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="bg-transparent text-xs text-slate-800 focus:outline-none font-mono cursor-pointer"
+                  title="Chọn ngày bắt đầu"
+                />
+                <span className="text-[11px] text-slate-400 font-medium">Đến ngày:</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="bg-transparent text-xs text-slate-800 focus:outline-none font-mono cursor-pointer"
+                  title="Chọn ngày kết thúc"
+                />
+                {(startDate || endDate) && (
+                  <button
+                    onClick={() => {
+                      setStartDate('');
+                      setEndDate('');
+                    }}
+                    className="p-0.5 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 cursor-pointer"
+                    title="Xóa khoảng ngày"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {/* Ô trạng thái lọc chọn: đã mua, chưa mua, không mua */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <select
+                  value={purchaseStatusFilter}
+                  onChange={(e) => setPurchaseStatusFilter(e.target.value as any)}
+                  className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer shadow-2xs"
+                >
+                  <option value="ALL">Tất cả trạng thái</option>
+                  <option value="Đã mua">Đã mua</option>
+                  <option value="Chưa mua">Chưa mua</option>
+                  <option value="Không mua">Không mua</option>
+                </select>
+              </div>
             </div>
 
-            {/* Chuyển Lập phiếu kho mới xuống bên cạnh ô tìm kiếm */}
-            <button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-600/20 cursor-pointer shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{getCreateButtonLabel()}</span>
-            </button>
-          </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  onShowToast(`Đã xuất báo cáo [${module.title}] định dạng Excel thành công!`);
+                }}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Xuất Excel</span>
+              </button>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => {
-                onShowToast(`Đã xuất báo cáo [${module.title}] định dạng Excel thành công!`);
-              }}
-              className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Xuất Excel</span>
-            </button>
-
-            <button
-              onClick={() => {
-                onShowToast(`Đang in biểu mẫu quy chuẩn [${module.title}]...`);
-              }}
-              className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-            >
-              <Printer className="w-3.5 h-3.5 text-slate-600" />
-              <span>In biểu mẫu</span>
-            </button>
+              <button
+                onClick={() => {
+                  onShowToast(`Đang in biểu mẫu quy chuẩn [${module.title}]...`);
+                }}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5 text-slate-600" />
+                <span>In biểu mẫu</span>
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="p-3.5 border-b border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/50">
+            <div className="flex items-center gap-2.5 flex-1">
+              <button
+                onClick={onBackToHub}
+                className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer shrink-0"
+                title="Quay lại danh sách phân hệ Kho"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+
+              <div className="relative flex-1 max-w-sm">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
+                  <Search className="w-3.5 h-3.5" />
+                </div>
+                <input
+                  type="text"
+                  value={filterQuery}
+                  onChange={(e) => setFilterQuery(e.target.value)}
+                  placeholder="Lọc dữ liệu theo từ khóa..."
+                  className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                />
+              </div>
+
+              {/* Chuyển Lập phiếu kho mới xuống bên cạnh ô tìm kiếm */}
+              <button
+                onClick={() => setIsCreateModalOpen(true)}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-600/20 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{getCreateButtonLabel()}</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => {
+                  onShowToast(`Đã xuất báo cáo [${module.title}] định dạng Excel thành công!`);
+                }}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Xuất Excel</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  onShowToast(`Đang in biểu mẫu quy chuẩn [${module.title}]...`);
+                }}
+                className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
+              >
+                <Printer className="w-3.5 h-3.5 text-slate-600" />
+                <span>In biểu mẫu</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Table Content */}
         {renderTableContent()}
