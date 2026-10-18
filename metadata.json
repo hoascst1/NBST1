@@ -1,0 +1,6 @@
+{
+  "name": "5F ERP - Phân hệ Kho vận",
+  "description": "Giao diện và cấu trúc chức năng phân hệ Kho vận trong hệ thống Quản lý nội bộ 5F ERP: Quản lý nhập xuất kho, kiểm kê, báo cáo tồn kho và danh mục vật tư thiết bị.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,6 @@
+{
+  "summary": "Kế hoạch triển khai giao diện và kiến trúc phân hệ Kho vận trong hệ thống Quản lý nội bộ 5F ERP. Bao gồm cấu trúc Sidebar đa phân hệ, Topbar chuyên nghiệp (đồng hồ thời gian thực, breadcrumbs, user Hòa - Admin), thanh tìm kiếm module, 3 nhóm thẻ chức năng chính (Nhập xuất kho, Báo cáo, Thiết lập & danh mục) cùng màn hình xem chi tiết tương tác hoàn chỉnh cho từng module.",
+  "updatedAt": "2026-10-17T09:00:09.568965730Z",
+  "requestFeedback": true,
+  "userFacing": true
+}
