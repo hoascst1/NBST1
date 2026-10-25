@@ -64,7 +64,7 @@ export const ModuleCard: React.FC<ModuleCardProps> = ({
           onSelect(module.id);
         }
       }}
-      className="group bg-white rounded-2xl border border-slate-200/90 p-4 hover:border-blue-400 hover:shadow-md transition-all duration-200 flex flex-col justify-between cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-left"
+      className="group relative bg-white rounded-[20px] border border-slate-200/80 p-4.5 hover:border-blue-400 hover:shadow-[0_6px_20px_rgba(37,99,235,0.07)] transition-all duration-200 flex flex-col justify-between cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-left select-none min-h-[160px]"
     >
       <div>
         {/* Top Header Row: Icon + Title + Action Buttons */}
@@ -72,13 +72,13 @@ export const ModuleCard: React.FC<ModuleCardProps> = ({
           <div className="flex items-center gap-3 min-w-0">
             {/* Colorful Rounded Icon Box */}
             <div
-              className={`w-10 h-10 rounded-xl ${module.iconBg} ${module.iconColor} flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-2xs`}
+              className={`w-11 h-11 rounded-[14px] ${module.iconBg} ${module.iconColor} flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:scale-105 shadow-2xs`}
             >
               <IconComponent className="w-5 h-5" />
             </div>
 
             {/* Title */}
-            <h3 className="text-sm font-bold text-slate-800 group-hover:text-blue-600 transition-colors tracking-tight truncate">
+            <h3 className="text-[14.5px] font-bold text-slate-900 group-hover:text-blue-600 transition-colors tracking-tight truncate leading-snug">
               {module.title}
             </h3>
           </div>
@@ -87,7 +87,7 @@ export const ModuleCard: React.FC<ModuleCardProps> = ({
           <div className="flex items-center gap-1 shrink-0 text-slate-400">
             <button
               onClick={handleStarClick}
-              className={`p-1 rounded-md hover:bg-slate-100 transition-colors cursor-pointer ${
+              className={`p-1.5 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer ${
                 isFav ? 'text-amber-400 fill-amber-400' : 'hover:text-amber-500'
               }`}
               title="Đánh dấu yêu thích"
@@ -96,33 +96,33 @@ export const ModuleCard: React.FC<ModuleCardProps> = ({
             </button>
 
             <div className="p-1 rounded-md text-slate-300 group-hover:text-blue-600 transition-colors">
-              <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+              <ArrowUpRight className="w-4 h-4 transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
             </div>
           </div>
         </div>
 
         {/* Short Description */}
-        <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+        <p className="text-[12.5px] text-slate-500 leading-relaxed line-clamp-2 mt-1">
           {module.description}
         </p>
       </div>
 
       {/* Footer Info: unboxed metadata */}
-      <div className="pt-2.5 mt-2.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
-        <span className="font-medium text-slate-400">
-          <span className="font-mono font-semibold text-slate-600 tabular-nums">
+      <div className="pt-3 mt-3 border-t border-slate-100/90 flex items-center justify-between text-xs text-slate-400">
+        <span className="font-medium text-slate-400 flex items-center gap-1">
+          <span className="font-mono font-bold text-slate-700 tabular-nums">
             {module.itemCount}
-          </span>{' '}
-          bản ghi
+          </span>
+          <span>bản ghi</span>
         </span>
 
         {module.badge ? (
-          <span className="text-[10px] font-semibold text-blue-600 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200/50">
+          <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200/60">
             {module.badge}
           </span>
         ) : (
-          <span className="text-blue-600 font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
-            Mở →
+          <span className="text-xs font-semibold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
+            Mở phân hệ →
           </span>
         )}
       </div>

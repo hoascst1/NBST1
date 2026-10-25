@@ -62,30 +62,32 @@ export const ModuleCardsHub: React.FC<ModuleCardsHubProps> = ({
       )}
 
       {/* Module Groups List */}
-      {filteredGroups.map((group) => (
-        <section key={group.id} className="space-y-3">
-          {/* Phân nhóm tiêu đề với đường kẻ dọc màu xanh */}
-          <div className="border-l-4 border-blue-600 pl-2.5 py-0.5 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-blue-600 tracking-tight">
-              {group.title}
-            </h2>
-            <span className="text-[11px] text-slate-400 font-medium">
-              {group.modules.length} mục
-            </span>
-          </div>
+      <div className="space-y-7">
+        {filteredGroups.map((group) => (
+          <section key={group.id} className="space-y-3.5">
+            {/* Phân nhóm tiêu đề với đường kẻ dọc màu xanh */}
+            <div className="border-l-[3.5px] border-blue-600 pl-3 py-0.5 flex items-center justify-between">
+              <h2 className="text-[14.5px] font-bold text-blue-700 tracking-tight flex items-center gap-2">
+                <span>{group.title}</span>
+              </h2>
+              <span className="text-xs text-slate-400 font-medium font-mono tabular-nums">
+                {group.modules.length} phân hệ
+              </span>
+            </div>
 
-          {/* Bố cục lưới card gồm 4 CỘT theo yêu cầu của người dùng */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-            {group.modules.map((module) => (
-              <ModuleCard
-                key={module.id}
-                module={module}
-                onSelect={onSelectModule}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+            {/* Bố cục lưới card gồm 4 CỘT theo yêu cầu của người dùng */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-5">
+              {group.modules.map((module) => (
+                <ModuleCard
+                  key={module.id}
+                  module={module}
+                  onSelect={onSelectModule}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
     </div>
   );
 };

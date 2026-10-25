@@ -200,98 +200,237 @@ export const MOCK_STOCK_SLIPS: StockSlip[] = [
     id: 'sl-1',
     code: 'PN-20261017_01',
     type: 'Nhập kho',
-    warehouseTarget: 'Kho Tổng Thủy điện Sơn Trà 1',
+    deliverer: 'Ngô Thiện Nhân',
+    warehouseSource: 'Ngô Thiện Nhân',
+    warehouseTarget: 'Kho cơ 1A',
     createdAt: '17/10/2026 08:10',
-    creator: 'Trần Văn Mạnh (Thủ kho)',
-    approver: 'Nguyễn Hữu Hòa (Admin)',
-    totalItems: 5,
+    creator: 'Nguyễn Hữu Hòa',
+    approver: 'Đinh Bạt Quân',
+    totalItems: 2,
     status: 'Đã duyệt',
-    note: 'Nhập mỡ chịu nhiệt Kluber và gioăng silicon đợt 2',
+    note: 'Nhập kho - Người giao: Ngô Thiện Nhân - Nơi nhận: Kho cơ 1A (Mỡ tra ổ bi Kluber Isoflex NBU 15, Vòng bi SKF 6205-2RSH/C3)',
+    items: [
+      {
+        id: '1',
+        name: 'Mỡ tra ổ bi Kluber Isoflex NBU 15',
+        code: 'TH-MO-KLUBER',
+        unit: 'Tuýp 1kg',
+        quantity: 5,
+        note: 'Bảo dưỡng gối trục tuabin',
+      },
+      {
+        id: '2',
+        name: 'Vòng bi SKF 6205-2RSH/C3',
+        code: 'VT-BEARING-6205',
+        unit: 'Chiếc',
+        quantity: 10,
+        note: 'Dự phòng cơ khí Kho cơ 1A',
+      },
+    ],
   },
   {
     id: 'sl-2',
     code: 'PN-20261017_02',
     type: 'Nhập kho',
-    warehouseTarget: 'Kho Phụ tùng - Xưởng Cơ điện',
+    deliverer: 'Trần Quang Hiếu',
+    warehouseSource: 'Trần Quang Hiếu',
+    warehouseTarget: 'Kho điện 1A',
     createdAt: '17/10/2026 14:30',
-    creator: 'Trần Văn Mạnh (Thủ kho)',
-    approver: 'Đang xử lý',
-    totalItems: 8,
+    creator: 'Lê Văn Hải',
+    approver: 'Đinh Bạt Quân',
+    totalItems: 2,
     status: 'Đang xử lý',
-    note: 'Nhập lô biến tần Fuji và vòng bi SKF từ NCC',
+    note: 'Nhập kho - Người giao: Trần Quang Hiếu - Nơi nhận: Kho điện 1A (Biến tần Fuji Frenic-Mini 7.5kW, Cảm biến quang Omron E3Z-D62)',
+    items: [
+      {
+        id: '1',
+        name: 'Biến tần Fuji Frenic-Mini 7.5kW',
+        code: 'VT-INV-FUJI-7.5',
+        unit: 'Chiếc',
+        quantity: 2,
+        note: 'Nhập mới dự phòng tủ điều khiển',
+      },
+      {
+        id: '2',
+        name: 'Cảm biến quang Omron E3Z-D62',
+        code: 'VT-CB-OPT',
+        unit: 'Chiếc',
+        quantity: 6,
+        note: 'Lắp đặt tủ tự động hóa',
+      },
+    ],
   },
   {
     id: 'sl-3',
     code: 'PX-20261017_01',
     type: 'Xuất kho',
-    warehouseSource: 'Kho Tổng Thủy điện Sơn Trà 1',
+    deliverer: 'Ngô Thiện Nhân',
+    receiver: 'Lê Ngọc Nhàn',
+    warehouseSource: 'Kho cơ 1A',
+    warehouseTarget: 'Nhà máy 1A',
     createdAt: '17/10/2026 10:15',
-    creator: 'Phạm Thị Thảo (Kế toán)',
-    approver: 'Nguyễn Hữu Hòa (Admin)',
-    totalItems: 3,
+    creator: 'Nguyễn Hữu Hòa',
+    approver: 'Đinh Bạt Quân',
+    totalItems: 2,
     status: 'Đã duyệt',
-    note: 'Xuất cấp cho đội bảo trì tổ máy số 1',
+    note: 'Xuất kho - Người giao: Ngô Thiện Nhân - Người nhận: Lê Ngọc Nhàn - Nơi xuất: Kho cơ 1A - Nơi nhận: Nhà máy 1A (Vòng bi SKF 6205-2RSH/C3, Keo khóa ren chống xoay Loctite 243)',
+    items: [
+      {
+        id: '1',
+        name: 'Vòng bi SKF 6205-2RSH/C3',
+        code: 'VT-BEARING-6205',
+        unit: 'Chiếc',
+        quantity: 4,
+        note: 'Xuất bảo trì định kỳ Nhà máy 1A',
+      },
+      {
+        id: '2',
+        name: 'Keo khóa ren chống xoay Loctite 243',
+        code: 'TH-KE-LOCTITE-243',
+        unit: 'Chai 50ml',
+        quantity: 2,
+        note: 'Cố định bulong bệ máy',
+      },
+    ],
   },
   {
     id: 'sl-3b',
     code: 'PX-20261017_02',
     type: 'Xuất kho',
-    warehouseSource: 'Kho Phụ tùng - Xưởng Cơ điện',
+    deliverer: 'Trần Quang Hiếu',
+    receiver: 'Bùi Văn Thuận',
+    warehouseSource: 'Kho cơ điện 1C',
+    warehouseTarget: 'Nhà máy 1C',
     createdAt: '17/10/2026 15:45',
-    creator: 'Võ Minh Trí (Kỹ thuật)',
-    approver: 'Nguyễn Hữu Hòa (Admin)',
-    totalItems: 4,
+    creator: 'Lê Văn Hải',
+    approver: 'Đinh Bạt Quân',
+    totalItems: 2,
     status: 'Đã duyệt',
-    note: 'Xuất vòng bi SKF và rơle trung gian thay thế khẩn cấp tổ máy H2',
+    note: 'Xuất kho - Người giao: Trần Quang Hiếu - Người nhận: Bùi Văn Thuận - Nơi xuất: Kho cơ điện 1C - Nơi nhận: Nhà máy 1C (Bộ điều khiển PLC Siemens S7-1200, Băng dính cách điện 3M Temflex 1500)',
+    items: [
+      {
+        id: '1',
+        name: 'Bộ điều khiển PLC Siemens S7-1200',
+        code: 'VT-PLC-S71200',
+        unit: 'Bộ',
+        quantity: 1,
+        note: 'Thay thế khẩn cấp tại Nhà máy 1C',
+      },
+      {
+        id: '2',
+        name: 'Băng dính cách điện 3M Temflex 1500',
+        code: 'TH-BANG-KEO-3M',
+        unit: 'Cuộn',
+        quantity: 10,
+        note: 'Đấu nối tủ bảng điện',
+      },
+    ],
   },
   {
     id: 'sl-4',
     code: 'PC-20261016_01',
     type: 'Chuyển kho',
-    warehouseSource: 'Kho Tổng Thủy điện Sơn Trà 1',
-    warehouseTarget: 'Kho Phụ tùng - Xưởng Cơ điện',
+    deliverer: 'Ngô Thiện Nhân',
+    receiver: 'Thái Ngọc Thức',
+    warehouseSource: 'Kho cơ 1A',
+    warehouseTarget: 'Kho cơ điện 1C',
     createdAt: '16/10/2026 16:45',
-    creator: 'Lê Hoàng Nam (Điều phối)',
-    approver: 'Chờ duyệt',
-    totalItems: 12,
+    creator: 'Nguyễn Hữu Hòa',
+    approver: 'Đinh Bạt Quân',
+    totalItems: 2,
     status: 'Chờ duyệt',
-    note: 'Điều chuyển vật tư điện dự phòng tổ máy H2',
+    note: 'Chuyển kho - Người giao: Ngô Thiện Nhân - Người nhận: Thái Ngọc Thức - Kho chuyển: Kho cơ 1A - Kho nhận: Kho cơ điện 1C (Van khí nén Festo 5/2 VUVS-L25, Găng tay sợi phủ lòng bàn tay PU)',
+    items: [
+      {
+        id: '1',
+        name: 'Van khí nén Festo 5/2 VUVS-L25',
+        code: 'VT-VAN-FESTO-02',
+        unit: 'Cái',
+        quantity: 3,
+        note: 'Điều chuyển dự phòng sang Kho cơ điện 1C',
+      },
+      {
+        id: '2',
+        name: 'Găng tay sợi phủ lòng bàn tay PU',
+        code: 'TH-GANG-PU',
+        unit: 'Đôi',
+        quantity: 20,
+        note: 'Bổ sung bảo hộ lao động',
+      },
+    ],
   },
   {
     id: 'sl-5',
     code: 'PN-20261016_01',
     type: 'Nhập kho',
-    warehouseTarget: 'Kho Tổng Thủy điện Sơn Trà 1',
+    deliverer: 'Ngô Thiện Nhân',
+    warehouseSource: 'Ngô Thiện Nhân',
+    warehouseTarget: 'Kho cơ điện 1C',
     createdAt: '16/10/2026 09:30',
-    creator: 'Trần Văn Mạnh (Thủ kho)',
-    approver: 'Nguyễn Hữu Hòa (Admin)',
-    totalItems: 6,
+    creator: 'Nguyễn Hữu Hòa',
+    approver: 'Đinh Bạt Quân',
+    totalItems: 1,
     status: 'Đã duyệt',
-    note: 'Nhập bộ điều khiển PLC Siemens S7-1200',
+    note: 'Nhập kho - Người giao: Ngô Thiện Nhân - Nơi nhận: Kho cơ điện 1C (Bộ điều khiển PLC Siemens S7-1200)',
+    items: [
+      {
+        id: '1',
+        name: 'Bộ điều khiển PLC Siemens S7-1200',
+        code: 'VT-PLC-S71200',
+        unit: 'Bộ',
+        quantity: 2,
+        note: 'Nhập dự phòng tủ điều khiển',
+      },
+    ],
   },
   {
     id: 'sl-6',
     code: 'PX-20261015_01',
     type: 'Xuất kho',
-    warehouseSource: 'Kho Dụng cụ & Thiết bị đo',
+    deliverer: 'Trần Quang Hiếu',
+    receiver: 'Thái Ngọc Thức',
+    warehouseSource: 'Kho điện 1A',
+    warehouseTarget: 'Nhà QLVH',
     createdAt: '15/10/2026 14:15',
-    creator: 'Nguyễn Văn Tuấn',
-    approver: 'Nguyễn Hữu Hòa (Admin)',
-    totalItems: 2,
+    creator: 'Lê Văn Hải',
+    approver: 'Đinh Bạt Quân',
+    totalItems: 1,
     status: 'Đã duyệt',
-    note: 'Bàn giao ampe kìm Fluke cho kỹ sư trực ca',
+    note: 'Xuất kho - Người giao: Trần Quang Hiếu - Người nhận: Thái Ngọc Thức - Nơi xuất: Kho điện 1A - Nơi nhận: Nhà QLVH (Ampe kìm đo dòng Fluke 376 FC True-RMS)',
+    items: [
+      {
+        id: '1',
+        name: 'Ampe kìm đo dòng Fluke 376 FC True-RMS',
+        code: 'DC-FLUKE-376',
+        unit: 'Cái',
+        quantity: 1,
+        note: 'Cấp phát trực vận hành tại Nhà QLVH',
+      },
+    ],
   },
   {
     id: 'sl-7',
     code: 'PN-20261012_01',
     type: 'Nhập kho',
-    warehouseTarget: 'Kho Tổng Thủy điện Sơn Trà 1',
+    deliverer: 'Trần Quang Hiếu',
+    warehouseSource: 'Trần Quang Hiếu',
+    warehouseTarget: 'Kho cơ 1A',
     createdAt: '12/10/2026 10:00',
-    creator: 'Võ Minh Trí',
-    approver: 'Từ chối',
-    totalItems: 4,
+    creator: 'Lê Văn Hải',
+    approver: 'Đinh Bạt Quân',
+    totalItems: 1,
     status: 'Đã hủy',
-    note: 'Lô van điện từ Festo sai thông số áp suất',
+    note: 'Nhập kho - Người giao: Trần Quang Hiếu - Nơi nhận: Kho cơ 1A (Van khí nén Festo 5/2 VUVS-L25 - Sai thông số áp suất)',
+    items: [
+      {
+        id: '1',
+        name: 'Van khí nén Festo 5/2 VUVS-L25',
+        code: 'VT-VAN-FESTO-02',
+        unit: 'Cái',
+        quantity: 4,
+        note: 'Hoàn trả do sai thông số áp suất',
+      },
+    ],
   },
 ];
 
@@ -300,54 +439,202 @@ export const MOCK_MATERIAL_REQUESTS: MaterialRequest[] = [
   {
     id: 'mr-1',
     code: 'DX-VT-2026-088',
-    department: 'Xưởng Bảo dưỡng Cơ điện',
-    location: 'Chuyền sản xuất C1',
-    requester: 'Đặng Quốc Huy (Trưởng ca)',
-    approver: 'Nguyễn Hữu Hòa (Admin)',
-    requestDate: '15/10/2026',
-    requiredDate: '18/10/2026',
-    itemCount: 6,
+    requestDate: '17/10/2026',
+    department: 'Ban KTSC',
+    category: 'Cơ khí',
+    requester: 'Nguyễn Hữu Hòa',
+    purpose: 'Bảo dưỡng định kỳ hệ thống điều tốc và gối đỡ tuabin Nhà máy 1A',
+    approvalLevel: 'Ban KTSC',
     urgency: 'Gấp',
     status: 'Đã phê duyệt',
+    location: 'Nhà máy 1A',
+    approver: 'Đinh Bạt Quân',
+    requiredDate: '19/10/2026',
+    itemCount: 2,
+    items: [
+      {
+        id: '1',
+        name: 'Vòng bi SKF 6205-2RSH/C3',
+        code: 'VT-BEARING-6205',
+        unit: 'Chiếc',
+        quantity: 6,
+        category: 'Cơ khí',
+        unitPrice: 285000,
+        taxRate: 8,
+        note: 'Thay thế vòng bi cụm bơm dầu điều tốc',
+      },
+      {
+        id: '2',
+        name: 'Mỡ tra ổ bi Kluber Isoflex NBU 15',
+        code: 'TH-MO-KLUBER',
+        unit: 'Tuýp 1kg',
+        quantity: 4,
+        category: 'Cơ khí',
+        unitPrice: 1250000,
+        taxRate: 8,
+        note: 'Bôi trơn ổ đỡ tuabin',
+      },
+    ],
   },
   {
     id: 'mr-2',
     code: 'DX-VT-2026-089',
-    department: 'Ban Quản lý Dự án Kỹ thuật',
-    location: 'Trạm điện biến áp T2',
-    requester: 'Hoàng Kim Long (Kỹ sư)',
-    approver: 'Chờ Trưởng phòng duyệt',
     requestDate: '16/10/2026',
-    requiredDate: '22/10/2026',
-    itemCount: 4,
+    department: 'Ban KTVH',
+    category: 'Điện',
+    requester: 'Lê Ngọc Nhàn',
+    purpose: 'Dự phòng vật tư tự động hóa và cảm biến tủ điều khiển Nhà máy 1B',
+    approvalLevel: 'Ban KTVH',
     urgency: 'Bình thường',
     status: 'Chờ duyệt',
+    location: 'Nhà máy 1B',
+    approver: 'Đinh Bạt Quân',
+    requiredDate: '22/10/2026',
+    itemCount: 2,
+    items: [
+      {
+        id: '1',
+        name: 'Bộ điều khiển PLC Siemens S7-1200',
+        code: 'VT-PLC-S71200',
+        unit: 'Bộ',
+        quantity: 2,
+        category: 'Điện',
+        unitPrice: 6800000,
+        taxRate: 10,
+        note: 'Dự phòng tủ điều khiển trung tâm',
+      },
+      {
+        id: '2',
+        name: 'Cảm biến quang Omron E3Z-D62',
+        code: 'VT-CB-OPT',
+        unit: 'Chiếc',
+        quantity: 5,
+        category: 'Điện',
+        unitPrice: 750000,
+        taxRate: 8,
+        note: 'Lắp đặt hệ thống giám sát hành trình van',
+      },
+    ],
   },
   {
     id: 'mr-3',
     code: 'DX-VT-2026-090',
-    department: 'Đội Vận hành Lò hơi',
-    location: 'Khu vực Lò nhiệt tầng 1',
-    requester: 'Vũ Đức Thành',
-    approver: 'Chờ Admin duyệt',
-    requestDate: '17/10/2026',
-    requiredDate: '17/10/2026',
-    itemCount: 2,
+    requestDate: '15/10/2026',
+    department: 'Ban KTSC',
+    category: 'Cơ khí',
+    requester: 'Bùi Văn Thuận',
+    purpose: 'Xử lý sự cố hệ thống van khí nén và tủ biến tần Nhà máy 1C',
+    approvalLevel: 'Ban KTSC',
     urgency: 'Khẩn cấp',
     status: 'Chờ duyệt',
+    location: 'Nhà máy 1C',
+    approver: 'Đinh Bạt Quân',
+    requiredDate: '16/10/2026',
+    itemCount: 2,
+    items: [
+      {
+        id: '1',
+        name: 'Van khí nén Festo 5/2 VUVS-L25',
+        code: 'VT-VAN-FESTO-02',
+        unit: 'Cái',
+        quantity: 3,
+        category: 'Cơ khí',
+        unitPrice: 1450000,
+        taxRate: 8,
+        note: 'Thay thế van khí nén buồng điều khiển',
+      },
+      {
+        id: '2',
+        name: 'Biến tần Fuji Frenic-Mini 7.5kW',
+        code: 'VT-INV-FUJI-7.5',
+        unit: 'Chiếc',
+        quantity: 1,
+        category: 'Điện',
+        unitPrice: 9200000,
+        taxRate: 10,
+        note: 'Dự phòng bơm tiêu nước',
+      },
+    ],
   },
   {
     id: 'mr-4',
     code: 'DX-VT-2026-087',
-    department: 'Phòng Kiểm chuẩn Chất lượng (QA)',
-    location: 'Phòng Lab vi sinh',
-    requester: 'Lê Mai Anh',
-    approver: 'Nguyễn Hữu Hòa (Admin)',
     requestDate: '11/10/2026',
-    requiredDate: '15/10/2026',
-    itemCount: 3,
+    department: 'Ban HCTC',
+    category: 'Điện',
+    requester: 'Lê Văn Hải',
+    purpose: 'Trang bị bảo hộ lao động và vật tư tiêu hao phục vụ ca trực Nhà QLVH',
+    approvalLevel: 'Ban HCTC',
     urgency: 'Bình thường',
     status: 'Đã phê duyệt',
+    location: 'Nhà QLVH',
+    approver: 'Đinh Bạt Quân',
+    requiredDate: '15/10/2026',
+    itemCount: 2,
+    items: [
+      {
+        id: '1',
+        name: 'Găng tay sợi phủ lòng bàn tay PU',
+        code: 'TH-GANG-PU',
+        unit: 'Đôi',
+        quantity: 30,
+        category: 'Cơ khí',
+        unitPrice: 18000,
+        taxRate: 8,
+        note: 'Cấp phát cho ca trực vận hành & sửa chữa',
+      },
+      {
+        id: '2',
+        name: 'Băng dính cách điện 3M Temflex 1500',
+        code: 'TH-BANG-KEO-3M',
+        unit: 'Cuộn',
+        quantity: 15,
+        category: 'Điện',
+        unitPrice: 22000,
+        taxRate: 8,
+        note: 'Bổ sung tủ dụng cụ an toàn điện',
+      },
+    ],
+  },
+  {
+    id: 'mr-5',
+    code: 'DX-VT-2026-082',
+    requestDate: '24/09/2026',
+    department: 'Ban KTVH',
+    category: 'Điện',
+    requester: 'Thái Ngọc Thức',
+    purpose: 'Bổ sung thiết bị đo kiểm điện và keo khóa ren bảo dưỡng định kỳ tháng 09',
+    approvalLevel: 'Ban KTVH',
+    urgency: 'Bình thường',
+    status: 'Đã phê duyệt',
+    location: 'Nhà máy 1A',
+    approver: 'Đinh Bạt Quân',
+    requiredDate: '28/09/2026',
+    itemCount: 2,
+    items: [
+      {
+        id: '1',
+        name: 'Ampe kìm đo dòng Fluke 376 FC True-RMS',
+        code: 'DC-FLUKE-376',
+        unit: 'Cái',
+        quantity: 2,
+        category: 'Điện',
+        unitPrice: 11500000,
+        taxRate: 10,
+        note: 'Phục vụ đo kiểm dòng điện tủ tự dùng',
+      },
+      {
+        id: '2',
+        name: 'Keo khóa ren chống xoay Loctite 243',
+        code: 'TH-KE-LOCTITE-243',
+        unit: 'Chai 50ml',
+        quantity: 5,
+        category: 'Cơ khí',
+        unitPrice: 390000,
+        taxRate: 8,
+        note: 'Cố định bulong chịu rung động',
+      },
+    ],
   },
 ];
 
@@ -1003,3 +1290,213 @@ export const MOCK_MATERIAL_TRACKING: MaterialTrackingItem[] = [
     note: 'Xưởng cơ khí mượn dùng chung bộ dụng cụ số 2 của Trạm ST1',
   },
 ];
+
+export type CatalogCategoryType = 'danh-muc-vat-tu' | 'vat-tu-tieu-hao' | 'cong-cu-dung-cu';
+
+export interface UnifiedCatalogEntry {
+  id: string;
+  code: string;
+  name: string;
+  unit: string;
+  catalogType: CatalogCategoryType;
+  catalogLabel: string;
+}
+
+const normalizeVietnameseText = (str: string): string => {
+  return (str || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+};
+
+const toAsciiCodeSlug = (str: string): string => {
+  const withoutDiacritics = (str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .trim();
+
+  const words = withoutDiacritics.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 'MOI';
+  if (words.length === 1) return words[0].slice(0, 6);
+  if (words.length === 2) return `${words[0].slice(0, 4)}-${words[1].slice(0, 4)}`;
+  // Take first word (up to 4 chars) + initials of remaining words
+  const prefix = words[0].slice(0, 4);
+  const initials = words
+    .slice(1, 5)
+    .map((w) => w[0])
+    .join('');
+  return `${prefix}-${initials}`;
+};
+
+export const getCatalogLabel = (catalogType: CatalogCategoryType): string => {
+  switch (catalogType) {
+    case 'danh-muc-vat-tu':
+      return 'Danh mục vật tư';
+    case 'vat-tu-tieu-hao':
+      return 'Danh mục vật tư tiêu hao';
+    case 'cong-cu-dung-cu':
+      return 'Danh mục công cụ, dụng cụ';
+  }
+};
+
+export const getAllUnifiedCatalogItems = (): UnifiedCatalogEntry[] => {
+  const materials: UnifiedCatalogEntry[] = MOCK_MATERIALS.map((m) => ({
+    id: m.id,
+    code: m.code,
+    name: m.name,
+    unit: m.unit,
+    catalogType: 'danh-muc-vat-tu',
+    catalogLabel: 'Danh mục vật tư',
+  }));
+
+  const consumables: UnifiedCatalogEntry[] = MOCK_CONSUMABLES.map((c) => ({
+    id: c.id,
+    code: c.code,
+    name: c.name,
+    unit: c.unit,
+    catalogType: 'vat-tu-tieu-hao',
+    catalogLabel: 'Danh mục vật tư tiêu hao',
+  }));
+
+  const tools: UnifiedCatalogEntry[] = MOCK_TOOLS.map((t) => ({
+    id: t.id,
+    code: t.code,
+    name: t.name,
+    unit: t.unit,
+    catalogType: 'cong-cu-dung-cu',
+    catalogLabel: 'Danh mục công cụ, dụng cụ',
+  }));
+
+  return [...materials, ...consumables, ...tools];
+};
+
+export const findCatalogItemByName = (rawName: string): UnifiedCatalogEntry | null => {
+  const normalized = normalizeVietnameseText(rawName);
+  if (!normalized) return null;
+
+  const allItems = getAllUnifiedCatalogItems();
+  const exactMatch = allItems.find((item) => normalizeVietnameseText(item.name) === normalized);
+  return exactMatch || null;
+};
+
+export const generateCatalogCode = (
+  catalogType: CatalogCategoryType,
+  itemName: string
+): string => {
+  const prefix =
+    catalogType === 'danh-muc-vat-tu'
+      ? 'VT'
+      : catalogType === 'vat-tu-tieu-hao'
+      ? 'TH'
+      : 'DC';
+
+  const count =
+    catalogType === 'danh-muc-vat-tu'
+      ? MOCK_MATERIALS.length + 1
+      : catalogType === 'vat-tu-tieu-hao'
+      ? MOCK_CONSUMABLES.length + 1
+      : MOCK_TOOLS.length + 1;
+
+  const slug = toAsciiCodeSlug(itemName);
+  const seq = String(count).padStart(2, '0');
+  const candidate = `${prefix}-${slug}-${seq}`;
+
+  const allCodes = new Set(getAllUnifiedCatalogItems().map((i) => i.code.toUpperCase()));
+  if (!allCodes.has(candidate)) {
+    return candidate;
+  }
+  return `${prefix}-${slug}-${String(Date.now()).slice(-3)}`;
+};
+
+export const addNewItemToCatalog = (params: {
+  catalogType: CatalogCategoryType;
+  name: string;
+  code?: string;
+  unit: string;
+  category?: string;
+  specifications?: string;
+  brand?: string;
+  origin?: string;
+}): UnifiedCatalogEntry => {
+  const cleanName = params.name.trim();
+  const cleanUnit = params.unit.trim() || 'Cái';
+  const finalCode = (params.code || '').trim() || generateCatalogCode(params.catalogType, cleanName);
+
+  if (params.catalogType === 'danh-muc-vat-tu') {
+    const newMat: MaterialItem = {
+      id: `mat-${Date.now()}`,
+      code: finalCode,
+      name: cleanName,
+      unit: cleanUnit,
+      category: params.category || 'Vật tư kỹ thuật',
+      specifications: params.specifications || 'Bổ sung từ nghiệp vụ lập phiếu kho',
+      brand: params.brand || 'Tiêu chuẩn ST1',
+      origin: params.origin || 'Việt Nam',
+      standard: 'TCVN / IEC',
+      active: true,
+    };
+    MOCK_MATERIALS.unshift(newMat);
+    const mod = ALL_MODULES.find((m) => m.id === 'danh-muc-vat-tu');
+    if (mod) mod.itemCount += 1;
+    return {
+      id: newMat.id,
+      code: newMat.code,
+      name: newMat.name,
+      unit: newMat.unit,
+      catalogType: 'danh-muc-vat-tu',
+      catalogLabel: 'Danh mục vật tư',
+    };
+  } else if (params.catalogType === 'vat-tu-tieu-hao') {
+    const newCon: MaterialItem = {
+      id: `con-${Date.now()}`,
+      code: finalCode,
+      name: cleanName,
+      unit: cleanUnit,
+      category: params.category || 'Vật tư tiêu hao',
+      specifications: params.specifications || 'Bổ sung từ nghiệp vụ lập phiếu kho',
+      brand: params.brand || 'Tiêu chuẩn ST1',
+      origin: params.origin || 'Việt Nam',
+      standard: 'TCVN',
+      active: true,
+    };
+    MOCK_CONSUMABLES.unshift(newCon);
+    const mod = ALL_MODULES.find((m) => m.id === 'vat-tu-tieu-hao');
+    if (mod) mod.itemCount += 1;
+    return {
+      id: newCon.id,
+      code: newCon.code,
+      name: newCon.name,
+      unit: newCon.unit,
+      catalogType: 'vat-tu-tieu-hao',
+      catalogLabel: 'Danh mục vật tư tiêu hao',
+    };
+  } else {
+    const newTool: ToolEquipmentItem = {
+      id: `tool-${Date.now()}`,
+      code: finalCode,
+      name: cleanName,
+      unit: cleanUnit,
+      category: params.category || 'Công cụ dụng cụ',
+      serialNumber: `SN-ST1-${String(Date.now()).slice(-6)}`,
+      specs: params.specifications || 'Bổ sung từ nghiệp vụ lập phiếu kho',
+      assignedTo: 'Kho Thủy điện Sơn Trà 1',
+      status: 'Sẵn sàng',
+    };
+    MOCK_TOOLS.unshift(newTool);
+    const mod = ALL_MODULES.find((m) => m.id === 'cong-cu-dung-cu');
+    if (mod) mod.itemCount += 1;
+    return {
+      id: newTool.id,
+      code: newTool.code,
+      name: newTool.name,
+      unit: newTool.unit,
+      catalogType: 'cong-cu-dung-cu',
+      catalogLabel: 'Danh mục công cụ, dụng cụ',
+    };
+  }
+};
+

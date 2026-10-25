@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   Plus,
-  FileSpreadsheet,
-  Printer,
   Search,
   Filter,
   Eye,
+  Pencil,
+  Trash2,
   CheckCircle2,
   Clock,
   AlertTriangle,
@@ -26,8 +26,22 @@ import {
   ClipboardCheck,
   History,
   PackageSearch,
+  Database,
+  RotateCw,
+  Settings,
+  Lock,
+  Unlock,
+  MessageSquarePlus,
 } from 'lucide-react';
-import { WarehouseModuleId, WarehouseModule } from '../types/warehouse';
+import {
+  WarehouseModuleId,
+  WarehouseModule,
+  StockSlip,
+  UserRole,
+  MaterialRequest,
+  StockSlipItem,
+  SummaryApprovalStatus,
+} from '../types/warehouse';
 import {
   MOCK_STOCK_SLIPS,
   MOCK_MATERIAL_REQUESTS,
@@ -43,17 +57,24 @@ import {
 } from '../data/warehouseData';
 import { MaterialTrackingItem } from '../types/warehouse';
 import { CreateModal } from './CreateModal';
+import { EditSlipModal } from './EditSlipModal';
+import { SupabaseConfigModal } from './SupabaseConfigModal';
+import { fetchPhieuKhoFromSupabase, isSupabaseConfigured } from '../lib/supabase';
 
 interface ModuleDetailViewProps {
   module: WarehouseModule;
   onBackToHub: () => void;
   onShowToast: (msg: string) => void;
+  currentUserRole?: UserRole;
+  onChangeUserRole?: (role: UserRole) => void;
 }
 
 export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
   module,
   onBackToHub,
   onShowToast,
+  currentUserRole = 'Admin/BGĐ',
+  onChangeUserRole,
 }) => {
   const [filterQuery, setFilterQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -65,73 +86,153 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedSlipDetail, setSelectedSlipDetail] = useState<any | null>(null);
 
-  // Status badge styling helper
+  // Action states for edit & delete in Phieu kho
+  const [slipToEdit, setSlipToEdit] = useState<StockSlip | null>(null);
+  const [slipToDelete, setSlipToDelete] = useState<StockSlip | null>(null);
+
+  // States for Phiếu đề xuất vật tư (de-xuat-vat-tu) & Bảng Tổng hợp vật tư
+  const [materialRequests, setMaterialRequests] = useState<MaterialRequest[]>(MOCK_MATERIAL_REQUESTS);
+  const [requestDeptFilter, setRequestDeptFilter] = useState<'ALL' | 'Ban KTSC' | 'Ban KTVH' | 'Ban HCTC'>('ALL');
+  const [requestCategoryFilter, setRequestCategoryFilter] = useState<'ALL' | 'Cơ khí' | 'Điện'>('ALL');
+  const [requestMonthFilter, setRequestMonthFilter] = useState<string>('ALL');
+  const [requestYearFilter, setRequestYearFilter] = useState<string>('ALL');
+  const [isMaterialSummaryOpen, setIsMaterialSummaryOpen] = useState(false);
+  const [summaryApprovalStatus, setSummaryApprovalStatus] = useState<SummaryApprovalStatus>('Chờ duyệt');
+  const [summaryApprovalNote, setSummaryApprovalNote] = useState<string>('');
+  const [summaryPricingOverrides, setSummaryPricingOverrides] = useState<
+    Record<string, { unitPrice?: number; taxRate?: number; note?: string }>
+  >({});
+  const [requestToEdit, setRequestToEdit] = useState<MaterialRequest | null>(null);
+  const [requestToDelete, setRequestToDelete] = useState<MaterialRequest | null>(null);
+
+  // Nếu người đăng nhập thuộc phòng ban cụ thể (Ban KTSC, Ban KTVH, Phòng HCTC)
+  const loggedInDepartment: 'Ban KTSC' | 'Ban KTVH' | 'Ban HCTC' | null =
+    currentUserRole === 'Ban KTSC'
+      ? 'Ban KTSC'
+      : currentUserRole === 'Ban KTVH'
+      ? 'Ban KTVH'
+      : currentUserRole === 'Phòng HCTC'
+      ? 'Ban HCTC'
+      : null;
+
+  // Helper parse tháng & năm từ chuỗi ngày (DD/MM/YYYY hoặc YYYY-MM-DD)
+  const extractMonthYear = (dateStr: string): { month: string; year: string } => {
+    if (!dateStr) return { month: '', year: '' };
+    const clean = dateStr.trim().split(' ')[0];
+    if (clean.includes('/')) {
+      const parts = clean.split('/');
+      if (parts.length === 3) {
+        return { month: parts[1].padStart(2, '0'), year: parts[2] };
+      }
+    } else if (clean.includes('-')) {
+      const parts = clean.split('-');
+      if (parts.length === 3) {
+        return { year: parts[0], month: parts[1].padStart(2, '0') };
+      }
+    }
+    return { month: '', year: '' };
+  };
+
+  // Helper loại bỏ phần ghi chú vai trò trong ngoặc ở cột người tạo (ví dụ: 'Trần Văn Mạnh (Thủ kho)' -> 'Trần Văn Mạnh')
+  const formatCreatorName = (name: string) => {
+    if (!name) return '—';
+    return name.replace(/\s*\([^)]*\)/g, '').trim();
+  };
+
+  // Supabase state for table Phieu_kho
+  const [warehouseSlips, setWarehouseSlips] = useState<StockSlip[]>(MOCK_STOCK_SLIPS);
+  const [isSupabaseLoading, setIsSupabaseLoading] = useState(false);
+  const [isSupabaseConnected, setIsSupabaseConnected] = useState(isSupabaseConfigured());
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+
+  // Load live data from Supabase table Phieu_kho
+  const loadPhieuKhoData = async (silent = false) => {
+    if (!isSupabaseConfigured()) {
+      setIsSupabaseConnected(false);
+      return;
+    }
+    if (!silent) setIsSupabaseLoading(true);
+    const { data, error } = await fetchPhieuKhoFromSupabase();
+    if (!silent) setIsSupabaseLoading(false);
+    if (!error && data) {
+      setIsSupabaseConnected(true);
+      if (data.length > 0) {
+        setWarehouseSlips(data);
+      }
+    } else if (error) {
+      setIsSupabaseConnected(false);
+      console.warn('Lỗi kết nối Supabase Phieu_kho:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (module.id === 'phieu-kho') {
+      loadPhieuKhoData(true);
+    }
+  }, [module.id]);
+
+  // Status badge styling helper - Nhất quán chuẩn giao diện rounded-full cho tất cả trạng thái
   const renderStatusBadge = (status: string) => {
     switch (status) {
       case 'Đã mua':
-        return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2.5 py-0.5 rounded-full">
-            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-            Đã mua
-          </span>
-        );
-      case 'Chưa mua':
-        return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
-            <Clock className="w-3 h-3 text-amber-600" />
-            Chưa mua
-          </span>
-        );
-      case 'Không mua':
-        return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full">
-            <X className="w-3 h-3 text-slate-400" />
-            Không mua
-          </span>
-        );
       case 'Đã duyệt':
       case 'Đã phê duyệt':
+      case 'Phòng HCTC Đã duyệt':
+      case 'BGĐ Đã duyệt':
       case 'Hoàn tất':
       case 'Đang hoạt động':
       case 'Sẵn sàng':
       case 'Đủ hàng':
+      case 'Đang áp dụng':
         return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2 py-0.5 rounded">
-            <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-            {status}
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200/80 px-2.5 py-0.5 rounded-full">
+            <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+            <span>{status}</span>
           </span>
         );
+      case 'Chưa mua':
       case 'Chờ duyệt':
       case 'Đang kiểm kê':
       case 'Chờ đối chiếu':
       case 'Sắp hết':
         return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded">
-            <Clock className="w-3 h-3 text-amber-600" />
-            {status}
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-0.5 rounded-full">
+            <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+            <span>{status}</span>
           </span>
         );
+      case 'Phòng HCTC Duyệt có ghi chú':
+      case 'BGĐ Duyệt có ghi chú':
       case 'Đang xử lý':
       case 'Đang sử dụng':
         return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200/80 px-2 py-0.5 rounded">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
-            {status}
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200/80 px-2.5 py-0.5 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-600 shrink-0"></span>
+            <span>{status}</span>
+          </span>
+        );
+      case 'Không mua':
+        return (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full">
+            <X className="w-3 h-3 text-slate-400 shrink-0" />
+            <span>Không mua</span>
           </span>
         );
       case 'Đã hủy':
       case 'Từ chối':
+      case 'Phòng HCTC Từ chối':
+      case 'BGĐ Từ chối':
       case 'Bảo trì':
         return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200/80 px-2 py-0.5 rounded">
-            <AlertTriangle className="w-3 h-3 text-rose-600" />
-            {status}
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-rose-700 bg-rose-50 border border-rose-200/80 px-2.5 py-0.5 rounded-full">
+            <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+            <span>{status}</span>
           </span>
         );
       default:
         return (
-          <span className="text-xs text-slate-600 font-medium">
-            {status}
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-700 bg-slate-50 border border-slate-200 px-2.5 py-0.5 rounded-full">
+            <span>{status}</span>
           </span>
         );
     }
@@ -157,7 +258,7 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
   const renderTableContent = () => {
     switch (module.id) {
       case 'phieu-kho': {
-        const filtered = MOCK_STOCK_SLIPS.filter((s) => {
+        const filtered = warehouseSlips.filter((s) => {
           const matchQ =
             s.code.toLowerCase().includes(filterQuery.toLowerCase()) ||
             s.creator.toLowerCase().includes(filterQuery.toLowerCase()) ||
@@ -168,105 +269,143 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
         });
 
         return (
-          <div>
-            {/* Filter tags for Phiếu kho */}
-            <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 flex-wrap text-xs">
-              <div className="flex items-center gap-1">
-                <span className="text-slate-500 font-medium mr-1">Loại phiếu:</span>
-                {['ALL', 'Nhập kho', 'Xuất kho', 'Chuyển kho'].map((t) => (
-                  <button
-                    key={t}
-                    onClick={() => setMovementFilter(t)}
-                    className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
-                      movementFilter === t
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                    }`}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-100/90 text-slate-700 border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                  <th
+                    className="py-3 px-4 text-center font-bold"
+                    style={{ fontFamily: 'Arial', fontWeight: 'bold', textAlign: 'center' }}
                   >
-                    {t === 'ALL' ? 'Tất cả' : t}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-1">
-                <span className="text-slate-500 font-medium mr-1">Trạng thái:</span>
-                {['ALL', 'Đã duyệt', 'Chờ duyệt', 'Đang xử lý'].map((st) => (
-                  <button
-                    key={st}
-                    onClick={() => setStatusFilter(st)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
-                      statusFilter === st
-                        ? 'bg-slate-800 text-white'
-                        : 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200'
-                    }`}
+                    Mã phiếu
+                  </th>
+                  <th
+                    className="py-3 px-4 text-center font-bold"
+                    style={{ fontFamily: 'Arial', textAlign: 'center' }}
                   >
-                    {st === 'ALL' ? 'Mọi trạng thái' : st}
-                  </button>
-                ))}
-              </div>
-            </div>
+                    Loại phiếu
+                  </th>
+                  <th className="py-3 px-4 text-center font-semibold">Thời gian</th>
+                  <th className="py-3 px-4 font-semibold">Người tạo</th>
+                  <th className="py-3 px-4 font-semibold">Mô tả</th>
+                  <th className="py-3 px-4 text-center font-semibold">Trạng thái</th>
+                  <th className="py-3 px-4 text-center font-semibold">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filtered.map((row) => (
+                  <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                    {/* 1. Mã phiếu */}
+                    <td className="py-3 px-4 font-mono font-bold text-blue-700 text-center tracking-tight">
+                      {row.code}
+                    </td>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-100/90 text-slate-700 border-b border-slate-200 font-semibold uppercase tracking-wider text-[11px]">
-                    <th className="py-3 px-4">Mã phiếu</th>
-                    <th className="py-3 px-4">Loại nghiệp vụ</th>
-                    <th className="py-3 px-4">Kho liên quan</th>
-                    <th className="py-3 px-4">Thời gian tạo</th>
-                    <th className="py-3 px-4">Người lập & Duyệt</th>
-                    <th className="py-3 px-4 text-right">Số lượng mặt hàng</th>
-                    <th className="py-3 px-4 text-center">Trạng thái</th>
-                    <th className="py-3 px-4 text-center">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filtered.map((row) => (
-                    <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3 px-4 font-mono font-bold text-blue-700">{row.code}</td>
-                      <td className="py-3 px-4 font-medium text-slate-800">
-                        <span className="inline-block px-2 py-0.5 rounded text-[11px] bg-slate-100 font-semibold text-slate-700">
-                          {row.type}
-                        </span>
-                      </td>
-                      <td className="py-3 px-4 text-slate-600">
-                        {row.warehouseSource && <div>Từ: {row.warehouseSource}</div>}
-                        {row.warehouseTarget && <div>Đến: {row.warehouseTarget}</div>}
-                      </td>
-                      <td className="py-3 px-4 font-mono tabular-nums text-slate-600">{row.createdAt}</td>
-                      <td className="py-3 px-4 text-slate-700">
-                        <div className="font-medium">{row.creator}</div>
-                        <div className="text-[11px] text-slate-400">Duyệt: {row.approver}</div>
-                      </td>
-                      <td className="py-3 px-4 text-right font-mono font-semibold tabular-nums text-slate-800">
-                        {row.totalItems} mục
-                      </td>
-                      <td className="py-3 px-4 text-center">{renderStatusBadge(row.status)}</td>
-                      <td className="py-3 px-4 text-center">
+                    {/* 2. Loại phiếu */}
+                    <td className="py-3 px-4 text-center">
+                      <span
+                        className={`inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                          row.type === 'Nhập kho'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : row.type === 'Xuất kho'
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        {row.type}
+                      </span>
+                    </td>
+
+                    {/* 3. Thời gian */}
+                    <td className="py-3 px-4 font-mono tabular-nums text-slate-600 text-center">
+                      {row.createdAt}
+                    </td>
+
+                    {/* 4. Người tạo */}
+                    <td className="py-3 px-4 font-medium text-slate-800">
+                      {formatCreatorName(row.creator)}
+                    </td>
+
+                    {/* 5. Mô tả */}
+                    <td className="py-3 px-4 text-slate-600 text-xs max-w-sm">
+                      {row.note || (
+                        row.warehouseSource
+                          ? `Xuất từ ${row.warehouseSource}`
+                          : row.warehouseTarget
+                          ? `Nhập vào ${row.warehouseTarget}`
+                          : '—'
+                      )}
+                    </td>
+
+                    {/* 6. Trạng thái */}
+                    <td className="py-3 px-4 text-center">
+                      {renderStatusBadge(row.status)}
+                    </td>
+
+                    {/* 7. Thao tác: 3 icon gồm Xem, Sửa, Xóa */}
+                    <td className="py-3 px-4 text-center">
+                      <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => setSelectedSlipDetail({ ...row, kind: 'slip' })}
-                          className="px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 rounded transition-colors cursor-pointer inline-flex items-center gap-1 border border-blue-200"
+                          title="Xem chi tiết phiếu kho"
+                          className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-blue-200"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          Xem phiếu
                         </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                        <button
+                          onClick={() => setSlipToEdit(row)}
+                          title="Chỉnh sửa phiếu kho"
+                          className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-amber-200"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setSlipToDelete(row)}
+                          title="Xóa phiếu kho"
+                          className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-rose-200"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         );
       }
 
       case 'de-xuat-vat-tu': {
-        const filtered = MOCK_MATERIAL_REQUESTS.filter((r) => {
+        const filtered = materialRequests.filter((r) => {
+          const q = filterQuery.toLowerCase().trim();
           const matchQ =
-            r.code.toLowerCase().includes(filterQuery.toLowerCase()) ||
-            r.department.toLowerCase().includes(filterQuery.toLowerCase()) ||
-            r.requester.toLowerCase().includes(filterQuery.toLowerCase());
-          return matchQ;
+            !q ||
+            r.code.toLowerCase().includes(q) ||
+            r.department.toLowerCase().includes(q) ||
+            r.requester.toLowerCase().includes(q) ||
+            (r.purpose && r.purpose.toLowerCase().includes(q)) ||
+            (r.approvalLevel && r.approvalLevel.toLowerCase().includes(q));
+
+          const matchDept =
+            requestDeptFilter === 'ALL' || r.department === requestDeptFilter;
+
+          const matchCategory =
+            requestCategoryFilter === 'ALL' ||
+            r.category === requestCategoryFilter ||
+            (r.items && r.items.some((it) => it.category === requestCategoryFilter));
+
+          const { month, year } = extractMonthYear(r.requestDate);
+          const matchMonth =
+            requestMonthFilter === 'ALL' || month === requestMonthFilter;
+          const matchYear =
+            requestYearFilter === 'ALL' || year === requestYearFilter;
+
+          const matchStatus =
+            statusFilter === 'ALL' ||
+            r.status === statusFilter ||
+            (statusFilter === 'Đã duyệt' && r.status === 'Đã phê duyệt');
+
+          return matchQ && matchDept && matchCategory && matchMonth && matchYear && matchStatus;
         });
 
         return (
@@ -274,50 +413,132 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-100/90 text-slate-700 border-b border-slate-200 font-semibold uppercase tracking-wider text-[11px]">
-                  <th className="py-3 px-4">Mã đề xuất</th>
-                  <th className="py-3 px-4">Phòng ban / Xưởng</th>
-                  <th className="py-3 px-4">Vị trí lắp đặt</th>
+                  <th className="py-3 px-4 text-center">Thời gian</th>
+                  <th className="py-3 px-4">Phòng ban</th>
                   <th className="py-3 px-4">Người đề xuất</th>
-                  <th className="py-3 px-4">Cấp duyệt</th>
-                  <th className="py-3 px-4">Ngày cần hàng</th>
-                  <th className="py-3 px-4 text-center">Độ khẩn</th>
+                  <th className="py-3 px-4 min-w-[240px]">Mục đích</th>
+                  <th className="py-3 px-4 text-center">Cấp duyệt</th>
+                  <th className="py-3 px-4 text-center">Mức độ</th>
                   <th className="py-3 px-4 text-center">Trạng thái</th>
                   <th className="py-3 px-4 text-center">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((row) => (
-                  <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-blue-700">{row.code}</td>
-                    <td className="py-3 px-4 font-medium text-slate-800">{row.department}</td>
-                    <td className="py-3 px-4 text-slate-600">{row.location}</td>
-                    <td className="py-3 px-4 text-slate-700 font-medium">{row.requester}</td>
-                    <td className="py-3 px-4 text-slate-600">{row.approver}</td>
-                    <td className="py-3 px-4 font-mono tabular-nums text-slate-600">{row.requiredDate}</td>
-                    <td className="py-3 px-4 text-center">
-                      <span
-                        className={`text-[11px] font-bold px-2 py-0.5 rounded ${
-                          row.urgency === 'Khẩn cấp'
-                            ? 'bg-rose-100 text-rose-700 border border-rose-300'
-                            : row.urgency === 'Gấp'
-                            ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                            : 'bg-slate-100 text-slate-600'
-                        }`}
-                      >
-                        {row.urgency}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-center">{renderStatusBadge(row.status)}</td>
-                    <td className="py-3 px-4 text-center">
-                      <button
-                        onClick={() => setSelectedSlipDetail({ ...row, kind: 'request' })}
-                        className="px-2.5 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 rounded transition-colors cursor-pointer border border-blue-200"
-                      >
-                        Xem chi tiết
-                      </button>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-10 text-center text-slate-400">
+                      Không tìm thấy phiếu đề xuất vật tư nào phù hợp với bộ lọc.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filtered.map((row) => {
+                    const canSeeRowStatus =
+                      !loggedInDepartment || row.department === loggedInDepartment;
+
+                    return (
+                      <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
+                        {/* 1. Thời gian */}
+                        <td className="py-3 px-4 font-mono tabular-nums text-slate-700 text-center font-semibold">
+                          {row.requestDate}
+                        </td>
+
+                        {/* 2. Phòng ban */}
+                        <td className="py-3 px-4 font-semibold text-slate-800">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200/70 text-[11px] font-bold">
+                              {row.department}
+                            </span>
+                            {row.category && (
+                              <span
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                                  row.category === 'Cơ khí'
+                                    ? 'bg-slate-100 text-slate-700 border-slate-200'
+                                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                                }`}
+                              >
+                                {row.category}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* 3. Người đề xuất */}
+                        <td className="py-3 px-4 text-slate-800 font-medium">
+                          {formatCreatorName(row.requester)}
+                        </td>
+
+                        {/* 4. Mục đích */}
+                        <td className="py-3 px-4 text-slate-600 max-w-md">
+                          {row.purpose || '—'}
+                        </td>
+
+                        {/* 5. Cấp duyệt (Ban KTSC, Ban KTVH, Ban HCTC) */}
+                        <td className="py-3 px-4 text-center">
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                            {row.approvalLevel || row.department}
+                          </span>
+                        </td>
+
+                        {/* 6. Mức độ */}
+                        <td className="py-3 px-4 text-center">
+                          <span
+                            className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                              row.urgency === 'Khẩn cấp'
+                                ? 'bg-rose-100 text-rose-700 border border-rose-300'
+                                : row.urgency === 'Gấp'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}
+                          >
+                            {row.urgency}
+                          </span>
+                        </td>
+
+                        {/* 7. Trạng thái (Nếu người đăng nhập thuộc phòng ban nào chỉ nhìn thấy trạng thái của phòng ban đó) */}
+                        <td className="py-3 px-4 text-center">
+                          {canSeeRowStatus ? (
+                            renderStatusBadge(row.status)
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded-full"
+                              title={`Người đăng nhập thuộc ${currentUserRole} chỉ nhìn thấy trạng thái của phòng ban mình`}
+                            >
+                              <Lock className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span>Nội bộ {row.department}</span>
+                            </span>
+                          )}
+                        </td>
+
+                        {/* 8. Thao tác (Xem, Sửa, Xóa) */}
+                        <td className="py-3 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => setSelectedSlipDetail({ ...row, kind: 'request' })}
+                              title="Xem chi tiết phiếu đề xuất vật tư"
+                              className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-blue-200"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setRequestToEdit(row)}
+                              title="Chỉnh sửa phiếu đề xuất vật tư"
+                              className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-amber-200"
+                            >
+                              <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setRequestToDelete(row)}
+                              title="Xóa phiếu đề xuất vật tư"
+                              className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-rose-200"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -335,50 +556,7 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
         });
 
         return (
-          <div>
-            {/* Thanh lọc thời gian và loại biến động */}
-            <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-slate-500 font-medium mr-1">Thời gian:</span>
-                {[
-                  { id: 'ALL', label: 'Tất cả' },
-                  { id: 'TODAY', label: 'Hôm nay (17/10)' },
-                  { id: 'MONTH', label: 'Tháng 10/2026' },
-                  { id: 'YEAR', label: 'Năm 2026' },
-                ].map((tf) => (
-                  <button
-                    key={tf.id}
-                    onClick={() => setTimeFilter(tf.id as any)}
-                    className={`px-2.5 py-1 rounded-md font-semibold transition-colors cursor-pointer ${
-                      timeFilter === tf.id
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-                    }`}
-                  >
-                    {tf.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-slate-500 font-medium mr-1">Biến động:</span>
-                {['ALL', 'Nhập', 'Xuất', 'Điều chuyển'].map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setMovementFilter(m)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
-                      movementFilter === m
-                        ? 'bg-slate-800 text-white'
-                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    {m === 'ALL' ? 'Mọi loại' : m}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
+          <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-100/90 text-slate-700 border-b border-slate-200 font-semibold uppercase tracking-wider text-[11px]">
@@ -424,7 +602,6 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
                 </tbody>
               </table>
             </div>
-          </div>
         );
       }
 
@@ -565,7 +742,7 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {MOCK_IN_OUT_REPORT.map((row) => (
                   <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-slate-800">{row.itemCode}</td>
+                    <td className="py-3 px-4 font-mono font-bold text-blue-700 tracking-tight">{row.itemCode}</td>
                     <td className="py-3 px-4 font-semibold text-slate-900">{row.itemName}</td>
                     <td className="py-3 px-4 text-slate-500">{row.unit}</td>
                     <td className="py-3 px-4 text-right font-mono tabular-nums font-semibold text-slate-700">
@@ -740,9 +917,7 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
                     <td className="py-3 px-4 text-slate-600">{row.origin}</td>
                     <td className="py-3 px-4 font-mono text-slate-500">{row.standard}</td>
                     <td className="py-3 px-4 text-center">
-                      <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                        Đang áp dụng
-                      </span>
+                      {renderStatusBadge('Đang áp dụng')}
                     </td>
                   </tr>
                 ))}
@@ -785,9 +960,7 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
                     <td className="py-3 px-4 font-medium text-slate-800">{row.brand}</td>
                     <td className="py-3 px-4 text-slate-600">{row.origin}</td>
                     <td className="py-3 px-4 text-center">
-                      <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                        Đang cấp phát
-                      </span>
+                      {renderStatusBadge('Sẵn sàng')}
                     </td>
                   </tr>
                 ))}
@@ -823,7 +996,7 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((row) => (
                   <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-teal-700">{row.code}</td>
+                    <td className="py-3 px-4 font-mono font-bold text-blue-700 tracking-tight tabular-nums">{row.code}</td>
                     <td className="py-3 px-4 font-semibold text-slate-900">{row.name}</td>
                     <td className="py-3 px-4 font-mono text-slate-600">{row.serialNumber}</td>
                     <td className="py-3 px-4 text-slate-600">{row.unit}</td>
@@ -866,7 +1039,7 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {MOCK_WAREHOUSES.map((row) => (
                   <tr key={row.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 px-4 font-mono font-bold text-violet-700">{row.code}</td>
+                    <td className="py-3 px-4 font-mono font-bold text-blue-700 tracking-tight tabular-nums">{row.code}</td>
                     <td className="py-3 px-4 font-bold text-slate-900">{row.name}</td>
                     <td className="py-3 px-4 font-medium text-slate-700">{row.branch}</td>
                     <td className="py-3 px-4 text-slate-600 max-w-xs">{row.address}</td>
@@ -1003,7 +1176,7 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
               </button>
 
               {/* Ô tìm kiếm */}
-              <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <div className="relative shrink-0">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                   <Search className="w-3.5 h-3.5" />
                 </div>
@@ -1011,8 +1184,9 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
                   type="text"
                   value={filterQuery}
                   onChange={(e) => setFilterQuery(e.target.value)}
-                  placeholder="Tìm kiếm vật tư theo mã, tên, quy cách..."
-                  className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="Tìm kiếm vật tư theo mã, tên..."
+                  style={{ width: '250px' }}
+                  className="w-[250px] pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
@@ -1063,32 +1237,11 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
                 </select>
               </div>
             </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => {
-                  onShowToast(`Đã xuất báo cáo [${module.title}] định dạng Excel thành công!`);
-                }}
-                className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Xuất Excel</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  onShowToast(`Đang in biểu mẫu quy chuẩn [${module.title}]...`);
-                }}
-                className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5 text-slate-600" />
-                <span>In biểu mẫu</span>
-              </button>
-            </div>
           </div>
         ) : (
-          <div className="p-3.5 border-b border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50/50">
-            <div className="flex items-center gap-2.5 flex-1">
+          <div className="p-3.5 border-b border-slate-200/80 flex flex-col xl:flex-row xl:items-center justify-between gap-3 bg-slate-50/50">
+            <div className="flex items-center gap-2.5 flex-1 flex-wrap">
+              {/* Nút quay lại (mũi tên) */}
               <button
                 onClick={onBackToHub}
                 className="p-1.5 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-300 transition-colors cursor-pointer shrink-0"
@@ -1097,7 +1250,8 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
                 <ArrowLeft className="w-4 h-4" />
               </button>
 
-              <div className="relative flex-1 max-w-sm">
+              {/* Ô tìm kiếm */}
+              <div className="relative shrink-0">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
                   <Search className="w-3.5 h-3.5" />
                 </div>
@@ -1106,41 +1260,244 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
                   value={filterQuery}
                   onChange={(e) => setFilterQuery(e.target.value)}
                   placeholder="Lọc dữ liệu theo từ khóa..."
-                  className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  style={{ width: '250px' }}
+                  className="w-[250px] pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
-              {/* Chuyển Lập phiếu kho mới xuống bên cạnh ô tìm kiếm */}
-              <button
-                onClick={() => setIsCreateModalOpen(true)}
-                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-600/20 cursor-pointer shrink-0"
-              >
-                <Plus className="w-4 h-4" />
-                <span>{getCreateButtonLabel()}</span>
-              </button>
+              {/* Ô xổ xuống: Loại phiếu và Trạng thái cho Phiếu kho */}
+              {module.id === 'phieu-kho' && (
+                <>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] text-slate-500 font-medium">Loại phiếu:</span>
+                    <select
+                      value={movementFilter}
+                      onChange={(e) => setMovementFilter(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer shadow-2xs"
+                    >
+                      <option value="ALL">Tất cả loại phiếu</option>
+                      <option value="Nhập kho">Phiếu nhập kho</option>
+                      <option value="Xuất kho">Phiếu xuất kho</option>
+                      <option value="Chuyển kho">Phiếu chuyển kho</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] text-slate-500 font-medium">Trạng thái:</span>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer shadow-2xs"
+                    >
+                      <option value="ALL">Tất cả trạng thái</option>
+                      <option value="Đã duyệt">Đã duyệt</option>
+                      <option value="Chờ duyệt">Chờ duyệt</option>
+                      <option value="Đang xử lý">Đang xử lý</option>
+                      <option value="Đã hủy">Đã hủy</option>
+                    </select>
+                  </div>
+
+                  {/* Button Lập phiếu kho mới đặt ngang hàng với trạng thái */}
+                  <button
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-600/20 cursor-pointer shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Lập phiếu kho mới</span>
+                  </button>
+
+                  {/* Nút kết nối Supabase bảng Phieu_kho */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => setIsConfigModalOpen(true)}
+                      title="Cấu hình & kiểm tra kết nối bảng Phieu_kho trong Supabase"
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 border transition-all cursor-pointer shadow-2xs ${
+                        isSupabaseConnected
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      <Database className={`w-3.5 h-3.5 ${isSupabaseConnected ? 'text-emerald-600' : 'text-slate-500'}`} />
+                      <span>{isSupabaseConnected ? `Supabase: Phieu_kho (${warehouseSlips.length})` : 'Supabase: Phieu_kho'}</span>
+                      <span className={`w-2 h-2 rounded-full ${isSupabaseConnected ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        loadPhieuKhoData();
+                        onShowToast('Đang làm mới dữ liệu từ bảng Phieu_kho trên Supabase...');
+                      }}
+                      disabled={isSupabaseLoading}
+                      title="Tải lại dữ liệu từ Supabase"
+                      className="p-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-600 rounded-lg transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                    >
+                      <RotateCw className={`w-3.5 h-3.5 ${isSupabaseLoading ? 'animate-spin text-blue-600' : ''}`} />
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Bộ lọc cho Đề xuất vật tư: Đơn vị đề xuất, Hạng mục (Cơ khí, Điện), Thời gian (Tháng, Năm), Trạng thái */}
+              {module.id === 'de-xuat-vat-tu' && (
+                <>
+                  {/* Ô lọc theo Đơn vị đề xuất */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs shrink-0 shadow-2xs">
+                    <span className="text-[11px] text-slate-500 font-medium">Đơn vị đề xuất:</span>
+                    <select
+                      value={requestDeptFilter}
+                      onChange={(e) => setRequestDeptFilter(e.target.value as any)}
+                      className="bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                    >
+                      <option value="ALL">Tất cả đơn vị</option>
+                      <option value="Ban KTSC">Ban KTSC</option>
+                      <option value="Ban KTVH">Ban KTVH</option>
+                      <option value="Ban HCTC">Ban HCTC</option>
+                    </select>
+                  </div>
+
+                  {/* Ô lọc theo Hạng mục (Cơ khí, Điện) */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs shrink-0 shadow-2xs">
+                    <span className="text-[11px] text-slate-500 font-medium">Hạng mục:</span>
+                    <select
+                      value={requestCategoryFilter}
+                      onChange={(e) =>
+                        setRequestCategoryFilter(e.target.value as 'ALL' | 'Cơ khí' | 'Điện')
+                      }
+                      className="bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                    >
+                      <option value="ALL">Tất cả hạng mục</option>
+                      <option value="Cơ khí">Cơ khí</option>
+                      <option value="Điện">Điện</option>
+                    </select>
+                  </div>
+
+                  {/* Ô thời gian (Tháng, năm) */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs shrink-0 shadow-2xs">
+                    <Calendar className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <span className="text-[11px] text-slate-500 font-medium">Thời gian:</span>
+                    <select
+                      value={requestMonthFilter}
+                      onChange={(e) => setRequestMonthFilter(e.target.value)}
+                      className="bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                      title="Chọn tháng"
+                    >
+                      <option value="ALL">Tất cả tháng</option>
+                      <option value="01">Tháng 01</option>
+                      <option value="02">Tháng 02</option>
+                      <option value="03">Tháng 03</option>
+                      <option value="04">Tháng 04</option>
+                      <option value="05">Tháng 05</option>
+                      <option value="06">Tháng 06</option>
+                      <option value="07">Tháng 07</option>
+                      <option value="08">Tháng 08</option>
+                      <option value="09">Tháng 09</option>
+                      <option value="10">Tháng 10</option>
+                      <option value="11">Tháng 11</option>
+                      <option value="12">Tháng 12</option>
+                    </select>
+                    <span className="text-slate-300">/</span>
+                    <select
+                      value={requestYearFilter}
+                      onChange={(e) => setRequestYearFilter(e.target.value)}
+                      className="bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                      title="Chọn năm"
+                    >
+                      <option value="ALL">Tất cả năm</option>
+                      <option value="2026">Năm 2026</option>
+                      <option value="2025">Năm 2025</option>
+                    </select>
+                  </div>
+
+                  {/* Ô lọc Trạng thái */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs shrink-0 shadow-2xs">
+                    <span className="text-[11px] text-slate-500 font-medium">Trạng thái:</span>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                    >
+                      <option value="ALL">Tất cả trạng thái</option>
+                      <option value="Đã phê duyệt">Đã phê duyệt</option>
+                      <option value="Chờ duyệt">Chờ duyệt</option>
+                      <option value="Từ chối">Từ chối</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {/* Ô xổ xuống: Trạng thái cho Kiểm kê kho */}
+              {module.id === 'kiem-ke-kho' && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[11px] text-slate-500 font-medium">Trạng thái:</span>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer shadow-2xs"
+                  >
+                    <option value="ALL">Tất cả trạng thái</option>
+                    <option value="Đã duyệt">Đã duyệt (Khớp số)</option>
+                    <option value="Đang kiểm kê">Đang kiểm kê</option>
+                  </select>
+                </div>
+              )}
+
+              {/* Ô xổ xuống: Biến động và Thời gian cho Lịch sử xuất nhập */}
+              {module.id === 'lich-su-xuat-nhap' && (
+                <>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] text-slate-500 font-medium">Biến động:</span>
+                    <select
+                      value={movementFilter}
+                      onChange={(e) => setMovementFilter(e.target.value)}
+                      className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer shadow-2xs"
+                    >
+                      <option value="ALL">Tất cả biến động</option>
+                      <option value="Nhập">Nhập kho</option>
+                      <option value="Xuất">Xuất kho</option>
+                      <option value="Điều chuyển">Điều chuyển</option>
+                    </select>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[11px] text-slate-500 font-medium">Thời gian:</span>
+                    <select
+                      value={timeFilter}
+                      onChange={(e) => setTimeFilter(e.target.value as any)}
+                      className="px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer shadow-2xs"
+                    >
+                      <option value="ALL">Tất cả thời gian</option>
+                      <option value="TODAY">Hôm nay (17/10)</option>
+                      <option value="MONTH">Tháng 10/2026</option>
+                      <option value="YEAR">Năm 2026</option>
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                onClick={() => {
-                  onShowToast(`Đã xuất báo cáo [${module.title}] định dạng Excel thành công!`);
-                }}
-                className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Xuất Excel</span>
-              </button>
+            {/* Cụm nút hành động bên phải cho các phân hệ */}
+            {['de-xuat-vat-tu', 'kiem-ke-kho', 'lich-su-xuat-nhap'].includes(module.id) && (
+              <div className="flex items-center gap-2 shrink-0 ml-auto">
+                {module.id === 'de-xuat-vat-tu' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsMaterialSummaryOpen(true)}
+                    className="px-3.5 py-1.5 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm shadow-teal-600/20 cursor-pointer shrink-0"
+                  >
+                    <ClipboardList className="w-4 h-4" />
+                    <span>Tổng hợp vật tư</span>
+                  </button>
+                )}
 
-              <button
-                onClick={() => {
-                  onShowToast(`Đang in biểu mẫu quy chuẩn [${module.title}]...`);
-                }}
-                className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5 cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5 text-slate-600" />
-                <span>In biểu mẫu</span>
-              </button>
-            </div>
+                <button
+                  onClick={() => setIsCreateModalOpen(true)}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm shadow-blue-600/20 cursor-pointer shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{getCreateButtonLabel()}</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1163,139 +1520,514 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
       </div>
 
       {/* Professional Full Slip Detail Modal */}
-      {selectedSlipDetail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 my-6">
-            {/* Document Header */}
-            <div className="border-b-2 border-slate-800 pb-4 mb-4">
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="text-[11px] font-bold text-slate-600 uppercase">
-                    CÔNG TY CỔ PHẦN THỦY ĐIỆN SƠN TRÀ 1
+      {selectedSlipDetail && (() => {
+        const isStockSlip = selectedSlipDetail.kind === 'slip';
+        const slipType: 'Nhập kho' | 'Xuất kho' | 'Chuyển kho' =
+          selectedSlipDetail.type === 'Xuất kho' || selectedSlipDetail.type === 'Chuyển kho'
+            ? selectedSlipDetail.type
+            : 'Nhập kho';
+
+        const cleanRawCreator = formatCreatorName(
+          selectedSlipDetail.creator ||
+            selectedSlipDetail.requester ||
+            selectedSlipDetail.leadAuditor ||
+            'Nguyễn Hữu Hòa'
+        );
+        const normalizedCreator = isStockSlip
+          ? cleanRawCreator === 'Lê Văn Hải' || cleanRawCreator === 'Nguyễn Hữu Hòa'
+            ? cleanRawCreator
+            : 'Nguyễn Hữu Hòa'
+          : cleanRawCreator;
+
+        const normalizedApprover = 'Đinh Bạt Quân';
+
+        const normalizedDeliverer =
+          selectedSlipDetail.deliverer === 'Trần Quang Hiếu' ||
+          selectedSlipDetail.deliverer === 'Ngô Thiện Nhân'
+            ? selectedSlipDetail.deliverer
+            : 'Ngô Thiện Nhân';
+
+        const normalizedReceiver =
+          selectedSlipDetail.receiver === 'Lê Ngọc Nhàn' ||
+          selectedSlipDetail.receiver === 'Bùi Văn Thuận' ||
+          selectedSlipDetail.receiver === 'Thái Ngọc Thức'
+            ? selectedSlipDetail.receiver
+            : 'Lê Ngọc Nhàn';
+
+        const validWarehouses = ['Kho cơ 1A', 'Kho điện 1A', 'Kho cơ điện 1C'];
+        const validPlants = ['Nhà máy 1A', 'Nhà máy 1B', 'Nhà máy 1C', 'Nhà QLVH'];
+
+        const normalizedSource =
+          selectedSlipDetail.warehouseSource &&
+          validWarehouses.includes(selectedSlipDetail.warehouseSource)
+            ? selectedSlipDetail.warehouseSource
+            : 'Kho cơ 1A';
+
+        const normalizedTarget =
+          slipType === 'Nhập kho'
+            ? selectedSlipDetail.warehouseTarget &&
+              validWarehouses.includes(selectedSlipDetail.warehouseTarget)
+              ? selectedSlipDetail.warehouseTarget
+              : 'Kho cơ 1A'
+            : slipType === 'Xuất kho'
+            ? selectedSlipDetail.warehouseTarget &&
+              validPlants.includes(selectedSlipDetail.warehouseTarget)
+              ? selectedSlipDetail.warehouseTarget
+              : 'Nhà máy 1A'
+            : selectedSlipDetail.warehouseTarget &&
+              validWarehouses.includes(selectedSlipDetail.warehouseTarget)
+            ? selectedSlipDetail.warehouseTarget
+            : 'Kho điện 1A';
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+            <div className="bg-white rounded-2xl max-w-3xl w-full p-6 shadow-2xl border border-slate-200 my-6">
+              {/* Document Header */}
+              <div className="border-b-2 border-slate-800 pb-4 mb-4">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="text-[11px] font-bold text-slate-600 uppercase">
+                      CÔNG TY CỔ PHẦN THỦY ĐIỆN ĐẠT PHƯƠNG SƠN TRÀ
+                    </div>
+                    <div className="text-[10px] text-slate-500">
+                      Nhà máy thủy điện Sơn Trà 1
+                    </div>
                   </div>
-                  <div className="text-[10px] text-slate-500">
-                    Phân hệ Quản lý Kho vận & Vật tư kỹ thuật
+
+                  <div className="text-right">
+                    <div className="text-[11px] font-mono font-bold text-blue-700">
+                      Số: {selectedSlipDetail.code}
+                    </div>
+                    <div className="text-[10px] text-slate-500">
+                      Ngày: {selectedSlipDetail.createdAt || selectedSlipDetail.requestDate || '17/10/2026'}
+                    </div>
                   </div>
                 </div>
 
-                <div className="text-right">
-                  <div className="text-[11px] font-mono font-bold text-blue-700">
-                    Số: {selectedSlipDetail.code}
-                  </div>
-                  <div className="text-[10px] text-slate-500">
-                    Ngày: {selectedSlipDetail.createdAt || selectedSlipDetail.requestDate || '17/10/2026'}
-                  </div>
+                <div className="text-center mt-3">
+                  <h2 className="text-base font-bold text-slate-900 uppercase tracking-wide">
+                    {selectedSlipDetail.kind === 'slip' && `PHIẾU ${slipType.toUpperCase()}`}
+                    {selectedSlipDetail.kind === 'request' && 'PHIẾU ĐỀ XUẤT VẬT TƯ KỸ THUẬT'}
+                    {selectedSlipDetail.kind === 'audit' && 'BIÊN BẢN KIỂM KÊ VÀ ĐỐI CHIẾU SỐ LIỆU KHO'}
+                    {selectedSlipDetail.kind === 'tool' && 'SỔ THEO DÕI THIẾT BỊ / DỤNG CỤ'}
+                  </h2>
                 </div>
               </div>
 
-              <div className="text-center mt-3">
-                <h2 className="text-base font-bold text-slate-900 uppercase tracking-wide">
-                  {selectedSlipDetail.kind === 'slip' && `PHIẾU ${selectedSlipDetail.type.toUpperCase()}`}
-                  {selectedSlipDetail.kind === 'request' && 'PHIẾU ĐỀ XUẤT VẬT TƯ KỸ THUẬT'}
-                  {selectedSlipDetail.kind === 'audit' && 'BIÊN BẢN KIỂM KÊ VÀ ĐỐI CHIẾU SỐ LIỆU KHO'}
-                  {selectedSlipDetail.kind === 'tool' && 'SỔ THEO DÕI THIẾT BỊ / DỤNG CỤ'}
-                </h2>
-              </div>
-            </div>
+              {/* Document Info Body - Phần thông tin chung theo đúng loại phiếu */}
+              {isStockSlip ? (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4 space-y-3 text-xs">
+                  <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                      1. Phần thông tin chung
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-slate-500">Trạng thái:</span>
+                      {renderStatusBadge(selectedSlipDetail.status || 'Chờ duyệt')}
+                    </div>
+                  </div>
 
-            {/* Document Info Body */}
-            <div className="grid grid-cols-2 gap-3 text-xs mb-4 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-              <div>
-                <span className="text-slate-500">Người lập / Đề xuất:</span>{' '}
-                <strong className="text-slate-800">{selectedSlipDetail.creator || selectedSlipDetail.requester || selectedSlipDetail.leadAuditor}</strong>
-              </div>
-              <div>
-                <span className="text-slate-500">Cấp phê duyệt:</span>{' '}
-                <strong className="text-blue-700">{selectedSlipDetail.approver || 'Nguyễn Hữu Hòa (Admin)'}</strong>
-              </div>
-              {selectedSlipDetail.warehouseSource && (
-                <div>
-                  <span className="text-slate-500">Kho nguồn:</span>{' '}
-                  <strong className="text-slate-800">{selectedSlipDetail.warehouseSource}</strong>
+                  {/* Hàng 1: Mã phiếu, Người lập phiếu, Người duyệt, Loại phiếu */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Mã phiếu
+                      </div>
+                      <div className="font-mono font-bold text-blue-700">
+                        {selectedSlipDetail.code}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Người lập phiếu
+                      </div>
+                      <div className="font-bold text-slate-800">
+                        {normalizedCreator}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Người duyệt
+                      </div>
+                      <div className="font-bold text-slate-800">
+                        {normalizedApprover}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Loại phiếu
+                      </div>
+                      <div className="font-bold text-blue-700">
+                        {slipType}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Hàng 2: Thay đổi theo đúng Nhập kho / Xuất kho / Chuyển kho */}
+                  {slipType === 'Nhập kho' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Người giao
+                        </div>
+                        <div className="font-bold text-slate-800">
+                          {normalizedDeliverer}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Nơi nhận
+                        </div>
+                        <div className="font-bold text-slate-800">
+                          {normalizedTarget}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {slipType === 'Xuất kho' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Người giao
+                        </div>
+                        <div className="font-bold text-slate-800">
+                          {normalizedDeliverer}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Người nhận
+                        </div>
+                        <div className="font-bold text-slate-800">
+                          {normalizedReceiver}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Nơi xuất
+                        </div>
+                        <div className="font-bold text-slate-800">
+                          {normalizedSource}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Nơi nhận
+                        </div>
+                        <div className="font-bold text-slate-800">
+                          {normalizedTarget}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {slipType === 'Chuyển kho' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Người giao
+                        </div>
+                        <div className="font-bold text-slate-800">
+                          {normalizedDeliverer}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Người nhận
+                        </div>
+                        <div className="font-bold text-slate-800">
+                          {normalizedReceiver}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Kho chuyển
+                        </div>
+                        <div className="font-bold text-slate-800">
+                          {normalizedSource}
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                        <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                          Kho nhận
+                        </div>
+                        <div className="font-bold text-slate-800">
+                          {normalizedTarget}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : selectedSlipDetail.kind === 'request' ? (
+                <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-4 space-y-3 text-xs">
+                  <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                    <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                      1. Phần thông tin chung — Phiếu đề xuất vật tư
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-slate-500">Trạng thái:</span>
+                      {renderStatusBadge(selectedSlipDetail.status || 'Chờ duyệt')}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Thời gian
+                      </div>
+                      <div className="font-mono font-bold text-slate-800">
+                        {selectedSlipDetail.requestDate}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Phòng ban (Đơn vị đề xuất)
+                      </div>
+                      <div className="font-bold text-blue-700">
+                        {selectedSlipDetail.department}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Người đề xuất
+                      </div>
+                      <div className="font-bold text-slate-800">
+                        {formatCreatorName(selectedSlipDetail.requester)}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Cấp duyệt
+                      </div>
+                      <div className="font-bold text-slate-800">
+                        {selectedSlipDetail.approvalLevel || selectedSlipDetail.department}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Mức độ
+                      </div>
+                      <div className="font-bold text-slate-800">
+                        {selectedSlipDetail.urgency}
+                      </div>
+                    </div>
+
+                    <div className="bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Mã đề xuất
+                      </div>
+                      <div className="font-mono font-bold text-blue-700">
+                        {selectedSlipDetail.code}
+                      </div>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-3 bg-white p-2.5 rounded-lg border border-slate-200/80">
+                      <div className="text-[10px] font-semibold text-slate-500 mb-0.5">
+                        Mục đích
+                      </div>
+                      <div className="font-medium text-slate-800">
+                        {selectedSlipDetail.purpose || '—'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 text-xs mb-4 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <div>
+                    <span className="text-slate-500">Người lập phiếu:</span>{' '}
+                    <strong className="text-slate-800">{normalizedCreator}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500">Người duyệt:</span>{' '}
+                    <strong className="text-slate-800">{normalizedApprover}</strong>
+                  </div>
+                  {selectedSlipDetail.department && (
+                    <div>
+                      <span className="text-slate-500">Đơn vị yêu cầu:</span>{' '}
+                      <strong className="text-slate-800">{selectedSlipDetail.department}</strong>
+                    </div>
+                  )}
+                  {selectedSlipDetail.note && (
+                    <div className="col-span-2">
+                      <span className="text-slate-500">Mô tả / Nội dung:</span>{' '}
+                      <span className="text-slate-700 italic">{selectedSlipDetail.note}</span>
+                    </div>
+                  )}
                 </div>
               )}
-              {selectedSlipDetail.warehouseTarget && (
-                <div>
-                  <span className="text-slate-500">Kho đích / Nơi nhận:</span>{' '}
-                  <strong className="text-slate-800">{selectedSlipDetail.warehouseTarget}</strong>
+
+              {/* Items list preview: STT, Tên vật tư, Mã vật tư, ĐVT, Số lượng, Ghi chú */}
+              <div className="border border-slate-200 rounded-lg overflow-hidden text-xs mb-5">
+                <div className="bg-slate-100 p-2 font-semibold text-slate-700 text-[11px] uppercase">
+                  2. Phần chi tiết vật tư
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="bg-slate-50 text-slate-600 border-b border-slate-200 text-[11px] uppercase">
+                      <tr>
+                        <th className="py-2 px-2.5 text-center w-10">STT</th>
+                        <th className="py-2 px-2.5">Tên vật tư</th>
+                        <th className="py-2 px-2.5">Mã vật tư</th>
+                        <th className="py-2 px-2.5 text-center">ĐVT</th>
+                        <th className="py-2 px-2.5 text-right">Số lượng</th>
+                        <th className="py-2 px-2.5">Ghi chú</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {(
+                        selectedSlipDetail.items && selectedSlipDetail.items.length > 0
+                          ? selectedSlipDetail.items
+                          : [
+                              {
+                                id: '1',
+                                name: 'Bộ điều khiển PLC Siemens S7-1200',
+                                code: 'VT-PLC-S71200',
+                                unit: 'Bộ',
+                                quantity: 2,
+                                note: 'Dự phòng tủ điều khiển',
+                              },
+                              {
+                                id: '2',
+                                name: 'Mỡ tra ổ bi Kluber Isoflex NBU 15',
+                                code: 'TH-MO-KLUBER',
+                                unit: 'Tuýp 1kg',
+                                quantity: 5,
+                                note: 'Bảo dưỡng gối trục tuabin',
+                              },
+                            ]
+                      ).map((it: any, idx: number) => (
+                        <tr key={it.id || idx}>
+                          <td className="py-2 px-2.5 text-center font-mono text-slate-500">
+                            {idx + 1}
+                          </td>
+                          <td className="py-2 px-2.5 font-medium text-slate-800">{it.name}</td>
+                          <td className="py-2 px-2.5 font-mono font-bold text-blue-700">{it.code}</td>
+                          <td className="py-2 px-2.5 text-center text-slate-600">{it.unit}</td>
+                          <td className="py-2 px-2.5 text-right font-mono font-bold text-slate-900">
+                            {it.quantity}
+                          </td>
+                          <td className="py-2 px-2.5 text-slate-600">{it.note || '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Signatures - Đồng bộ theo đúng Người lập phiếu, Người giao, Người nhận, Người duyệt */}
+              {isStockSlip && slipType === 'Nhập kho' ? (
+                <div className="grid grid-cols-3 gap-2 text-center text-xs pt-3 border-t border-slate-200">
+                  <div>
+                    <div className="font-bold text-slate-800">Người lập phiếu</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">{normalizedCreator}</div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800">Người giao</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">{normalizedDeliverer}</div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800">Người duyệt</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">{normalizedApprover}</div>
+                  </div>
+                </div>
+              ) : isStockSlip ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-xs pt-3 border-t border-slate-200">
+                  <div>
+                    <div className="font-bold text-slate-800">Người lập phiếu</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">{normalizedCreator}</div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800">Người giao</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">{normalizedDeliverer}</div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800">Người nhận</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">{normalizedReceiver}</div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800">Người duyệt</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">{normalizedApprover}</div>
+                  </div>
+                </div>
+              ) : selectedSlipDetail.kind === 'request' ? (
+                <div className="grid grid-cols-3 gap-2 text-center text-xs pt-3 border-t border-slate-200">
+                  <div>
+                    <div className="font-bold text-slate-800">Người đề xuất</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">
+                      {formatCreatorName(selectedSlipDetail.requester)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800">
+                      Cấp duyệt ({selectedSlipDetail.approvalLevel || selectedSlipDetail.department})
+                    </div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">
+                      {selectedSlipDetail.approvalLevel || selectedSlipDetail.department}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800">Phê duyệt</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">{normalizedApprover}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 text-center text-xs pt-3 border-t border-slate-200">
+                  <div>
+                    <div className="font-bold text-slate-800">Người lập phiếu</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">{normalizedCreator}</div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800">Thủ kho phụ trách</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">Ngô Thiện Nhân</div>
+                  </div>
+                  <div>
+                    <div className="font-bold text-slate-800">Người duyệt</div>
+                    <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
+                    <div className="font-semibold text-slate-800">{normalizedApprover}</div>
+                  </div>
                 </div>
               )}
-              {selectedSlipDetail.department && (
-                <div>
-                  <span className="text-slate-500">Đơn vị yêu cầu:</span>{' '}
-                  <strong className="text-slate-800">{selectedSlipDetail.department}</strong>
-                </div>
-              )}
-              {selectedSlipDetail.note && (
-                <div className="col-span-2">
-                  <span className="text-slate-500">Lý do / Mục đích:</span>{' '}
-                  <span className="text-slate-700 italic">{selectedSlipDetail.note}</span>
-                </div>
-              )}
-            </div>
 
-            {/* Items list preview */}
-            <div className="border border-slate-200 rounded-lg overflow-hidden text-xs mb-5">
-              <div className="bg-slate-100 p-2 font-semibold text-slate-700 text-[11px] uppercase">
-                Danh mục vật tư thực hiện
+              {/* Modal Actions */}
+              <div className="mt-6 pt-4 border-t border-slate-200 flex items-center justify-end">
+                <button
+                  onClick={() => setSelectedSlipDetail(null)}
+                  className="px-5 py-2 bg-slate-900 text-white rounded-lg text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
               </div>
-              <div className="p-3 space-y-2">
-                <div className="flex items-center justify-between py-1 border-b border-slate-100">
-                  <span className="font-mono text-slate-700 font-semibold">VT-PLC-S71200</span>
-                  <span className="font-medium text-slate-800">Bộ điều khiển PLC Siemens S7-1200</span>
-                  <span className="font-mono tabular-nums text-slate-900 font-bold">2 Bộ</span>
-                </div>
-                <div className="flex items-center justify-between py-1">
-                  <span className="font-mono text-slate-700 font-semibold">TH-MO-KLUBER</span>
-                  <span className="font-medium text-slate-800">Mỡ tra ổ bi Kluber Isoflex NBU 15</span>
-                  <span className="font-mono tabular-nums text-slate-900 font-bold">5 Tuýp</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Signatures */}
-            <div className="grid grid-cols-3 gap-2 text-center text-xs pt-2 border-t border-slate-200">
-              <div>
-                <div className="font-bold text-slate-800">Người lập phiếu</div>
-                <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
-                <div className="font-medium text-slate-700">Nguyễn Hữu Hòa</div>
-              </div>
-              <div>
-                <div className="font-bold text-slate-800">Thủ kho phụ trách</div>
-                <div className="text-[10px] text-slate-400 mb-6">(Ký & ghi rõ họ tên)</div>
-                <div className="font-medium text-slate-700">Trần Văn Mạnh</div>
-              </div>
-              <div>
-                <div className="font-bold text-slate-800">Lãnh đạo phê duyệt</div>
-                <div className="text-[10px] text-slate-400 mb-6">(Ký & đóng dấu)</div>
-                <div className="font-bold text-emerald-600 bg-emerald-50 py-0.5 rounded border border-emerald-200 text-[11px]">
-                  [ĐÃ DUYỆT 5F]
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="mt-6 pt-4 border-t border-slate-200 flex items-center justify-between">
-              <button
-                onClick={() => {
-                  onShowToast(`Đang in bản sao phiếu ${selectedSlipDetail.code}...`);
-                }}
-                className="px-3.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer"
-              >
-                <Printer className="w-3.5 h-3.5 text-slate-500" />
-                <span>In phiếu lưu sổ</span>
-              </button>
-
-              <button
-                onClick={() => setSelectedSlipDetail(null)}
-                className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 transition-colors cursor-pointer"
-              >
-                Đóng
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Create Modal */}
       <CreateModal
@@ -1304,7 +2036,915 @@ export const ModuleDetailView: React.FC<ModuleDetailViewProps> = ({
         moduleTitle={module.title}
         onClose={() => setIsCreateModalOpen(false)}
         onSubmitSuccess={(msg) => onShowToast(msg)}
+        onCreatedSlip={(newSlip) => {
+          setWarehouseSlips((prev) => [newSlip, ...prev]);
+        }}
+        onCreatedMaterialRequest={(newReq) => {
+          setMaterialRequests((prev) => [newReq, ...prev]);
+        }}
       />
+
+      {/* Supabase Configuration Modal */}
+      <SupabaseConfigModal
+        isOpen={isConfigModalOpen}
+        onClose={() => setIsConfigModalOpen(false)}
+        onConnectionSuccess={() => loadPhieuKhoData()}
+        onShowToast={onShowToast}
+      />
+
+      {/* Edit Slip Modal */}
+      <EditSlipModal
+        isOpen={Boolean(slipToEdit)}
+        slip={slipToEdit}
+        onClose={() => setSlipToEdit(null)}
+        currentUserRole={currentUserRole}
+        onChangeUserRole={onChangeUserRole}
+        onSave={(updatedSlip) => {
+          setWarehouseSlips((prev) =>
+            prev.map((s) => (s.id === updatedSlip.id ? updatedSlip : s))
+          );
+          onShowToast(`Đã cập nhật thành công phiếu kho [${updatedSlip.code}]!`);
+          setSlipToEdit(null);
+        }}
+      />
+
+      {/* Delete Confirmation Modal for Phieu kho */}
+      {slipToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-center animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-2">
+              Xác nhận xóa phiếu kho
+            </h3>
+            <p className="text-xs text-slate-600 mb-6 leading-relaxed">
+              Bạn có chắc chắn muốn xóa phiếu kho <strong className="text-rose-700 font-mono font-bold">{slipToDelete.code}</strong> khỏi hệ thống Quản lý nội bộ Thủy điện Sơn Trà 1 không? Thao tác này không thể hoàn tác.
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSlipToDelete(null)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const code = slipToDelete.code;
+                  setWarehouseSlips((prev) => prev.filter((s) => s.id !== slipToDelete.id));
+                  onShowToast(`Đã xóa thành công phiếu kho [${code}]!`);
+                  setSlipToDelete(null);
+                }}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm shadow-rose-600/20"
+              >
+                Xác nhận xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Chỉnh sửa Phiếu đề xuất vật tư */}
+      {requestToEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-3xl w-full my-6 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center">
+                  <Pencil className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Chỉnh sửa phiếu đề xuất vật tư
+                  </h3>
+                  <span className="text-[11px] font-mono text-blue-700 font-semibold">
+                    {requestToEdit.code}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRequestToEdit(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                setMaterialRequests((prev) =>
+                  prev.map((r) => (r.id === requestToEdit.id ? requestToEdit : r))
+                );
+                onShowToast(`Đã cập nhật thành công phiếu đề xuất [${requestToEdit.code}]!`);
+                setRequestToEdit(null);
+              }}
+              className="p-6 space-y-4 overflow-y-auto text-xs"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Thời gian
+                  </label>
+                  <input
+                    type="text"
+                    value={requestToEdit.requestDate}
+                    onChange={(e) =>
+                      setRequestToEdit({ ...requestToEdit, requestDate: e.target.value })
+                    }
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-mono font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Phòng ban (Đơn vị đề xuất)
+                  </label>
+                  <select
+                    value={requestToEdit.department}
+                    onChange={(e) =>
+                      setRequestToEdit({
+                        ...requestToEdit,
+                        department: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                  >
+                    <option value="Ban KTSC">Ban KTSC</option>
+                    <option value="Ban KTVH">Ban KTVH</option>
+                    <option value="Ban HCTC">Ban HCTC</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Người đề xuất
+                  </label>
+                  <input
+                    type="text"
+                    value={requestToEdit.requester}
+                    onChange={(e) =>
+                      setRequestToEdit({ ...requestToEdit, requester: e.target.value })
+                    }
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Cấp duyệt
+                  </label>
+                  <select
+                    value={requestToEdit.approvalLevel}
+                    onChange={(e) =>
+                      setRequestToEdit({
+                        ...requestToEdit,
+                        approvalLevel: e.target.value as 'Ban KTSC' | 'Ban KTVH' | 'Ban HCTC',
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                  >
+                    <option value="Ban KTSC">Ban KTSC</option>
+                    <option value="Ban KTVH">Ban KTVH</option>
+                    <option value="Ban HCTC">Ban HCTC</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Mức độ
+                  </label>
+                  <select
+                    value={requestToEdit.urgency}
+                    onChange={(e) =>
+                      setRequestToEdit({
+                        ...requestToEdit,
+                        urgency: e.target.value as 'Bình thường' | 'Gấp' | 'Khẩn cấp',
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                  >
+                    <option value="Bình thường">Bình thường</option>
+                    <option value="Gấp">Gấp</option>
+                    <option value="Khẩn cấp">Khẩn cấp</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Trạng thái
+                  </label>
+                  <select
+                    value={requestToEdit.status}
+                    onChange={(e) =>
+                      setRequestToEdit({
+                        ...requestToEdit,
+                        status: e.target.value as 'Đã phê duyệt' | 'Chờ duyệt' | 'Từ chối',
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                  >
+                    <option value="Chờ duyệt">Chờ duyệt</option>
+                    <option value="Đã phê duyệt">Đã phê duyệt</option>
+                    <option value="Từ chối">Từ chối</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Hạng mục
+                  </label>
+                  <select
+                    value={requestToEdit.category || 'Cơ khí'}
+                    onChange={(e) =>
+                      setRequestToEdit({
+                        ...requestToEdit,
+                        category: e.target.value as 'Cơ khí' | 'Điện',
+                      })
+                    }
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 cursor-pointer"
+                  >
+                    <option value="Cơ khí">Cơ khí</option>
+                    <option value="Điện">Điện</option>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 mb-1">
+                    Mục đích
+                  </label>
+                  <input
+                    type="text"
+                    value={requestToEdit.purpose}
+                    onChange={(e) =>
+                      setRequestToEdit({ ...requestToEdit, purpose: e.target.value })
+                    }
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRequestToEdit(null)}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-lg font-semibold transition-colors cursor-pointer"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold transition-colors cursor-pointer shadow-sm"
+                >
+                  Lưu thay đổi
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Xác nhận xóa Phiếu đề xuất vật tư */}
+      {requestToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 text-center animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-900 mb-2">
+              Xác nhận xóa phiếu đề xuất vật tư
+            </h3>
+            <p className="text-xs text-slate-600 mb-6 leading-relaxed">
+              Bạn có chắc chắn muốn xóa phiếu đề xuất <strong className="text-rose-700 font-mono font-bold">{requestToDelete.code}</strong> của <strong>{requestToDelete.department}</strong> không?
+            </p>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setRequestToDelete(null)}
+                className="px-4 py-2 border border-slate-300 text-slate-700 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const code = requestToDelete.code;
+                  setMaterialRequests((prev) => prev.filter((r) => r.id !== requestToDelete.id));
+                  onShowToast(`Đã xóa thành công phiếu đề xuất vật tư [${code}]!`);
+                  setRequestToDelete(null);
+                }}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-sm shadow-rose-600/20"
+              >
+                Xác nhận xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Tổng hợp vật tư đề xuất */}
+      {isMaterialSummaryOpen && (() => {
+        // Quyền hiển thị các cột tài chính: Đơn giá, Thành tiền trước thuế, Thuế suất, Tiền thuế, Thành tiền sau thuế
+        const canViewFinancialColumns =
+          currentUserRole === 'Admin/BGĐ' ||
+          currentUserRole === 'BGĐ' ||
+          currentUserRole === 'Kế toán';
+
+        // Quyền thay đổi ô Trạng thái: Chỉ những người có vai trò là BGĐ (Admin/BGĐ, BGĐ), Kế toán được quyền thay đổi
+        const canChangeSummaryStatus =
+          currentUserRole === 'Admin/BGĐ' ||
+          currentUserRole === 'BGĐ' ||
+          currentUserRole === 'Kế toán';
+
+        // Danh sách tùy chọn Trạng thái theo phòng ban người đăng nhập
+        const allSummaryStatusOptions: SummaryApprovalStatus[] = [
+          'Chờ duyệt',
+          'Phòng HCTC Đã duyệt',
+          'Phòng HCTC Từ chối',
+          'Phòng HCTC Duyệt có ghi chú',
+          'BGĐ Đã duyệt',
+          'BGĐ Từ chối',
+          'BGĐ Duyệt có ghi chú',
+        ];
+
+        const visibleStatusOptions: SummaryApprovalStatus[] =
+          currentUserRole === 'Phòng HCTC'
+            ? [
+                'Chờ duyệt',
+                'Phòng HCTC Đã duyệt',
+                'Phòng HCTC Từ chối',
+                'Phòng HCTC Duyệt có ghi chú',
+              ]
+            : allSummaryStatusOptions;
+
+        const isNoteRequired =
+          summaryApprovalStatus === 'Phòng HCTC Duyệt có ghi chú' ||
+          summaryApprovalStatus === 'BGĐ Duyệt có ghi chú';
+
+        // Lọc các phiếu đề xuất phù hợp với Hạng mục, Thời gian (Tháng, Năm) và Phòng ban
+        const matchingRequests = materialRequests.filter((r) => {
+          const matchDept =
+            loggedInDepartment
+              ? r.department === loggedInDepartment
+              : requestDeptFilter === 'ALL' || r.department === requestDeptFilter;
+          const { month, year } = extractMonthYear(r.requestDate);
+          const matchMonth =
+            requestMonthFilter === 'ALL' || month === requestMonthFilter;
+          const matchYear =
+            requestYearFilter === 'ALL' || year === requestYearFilter;
+          const matchStatus =
+            statusFilter === 'ALL' ||
+            r.status === statusFilter ||
+            (statusFilter === 'Đã duyệt' && r.status === 'Đã phê duyệt');
+          const matchCategory =
+            requestCategoryFilter === 'ALL' ||
+            r.category === requestCategoryFilter ||
+            (r.items && r.items.some((it) => it.category === requestCategoryFilter));
+
+          return matchDept && matchMonth && matchYear && matchStatus && matchCategory;
+        });
+
+        const summaryMap = new Map<
+          string,
+          {
+            key: string;
+            code: string;
+            name: string;
+            unit: string;
+            category: 'Cơ khí' | 'Điện';
+            totalQuantity: number;
+            defaultUnitPrice: number;
+            defaultTaxRate: number;
+            defaultNote: string;
+          }
+        >();
+
+        matchingRequests.forEach((req) => {
+          const reqItems: StockSlipItem[] =
+            req.items && req.items.length > 0
+              ? req.items
+              : [
+                  {
+                    id: '1',
+                    name: 'Vòng bi SKF 6205-2RSH/C3',
+                    code: 'VT-BEARING-6205',
+                    unit: 'Chiếc',
+                    quantity: 4,
+                    category: req.category || 'Cơ khí',
+                    unitPrice: 245000,
+                    taxRate: 8,
+                    note: req.purpose || '',
+                  },
+                ];
+
+          reqItems.forEach((it) => {
+            const itemCat = it.category || req.category || 'Cơ khí';
+            if (requestCategoryFilter !== 'ALL' && itemCat !== requestCategoryFilter) {
+              return;
+            }
+
+            const key = it.code || it.name;
+            const existing = summaryMap.get(key);
+            if (existing) {
+              existing.totalQuantity += Number(it.quantity) || 0;
+              if (it.note && !existing.defaultNote.includes(it.note)) {
+                existing.defaultNote = existing.defaultNote
+                  ? `${existing.defaultNote}; ${it.note}`
+                  : it.note;
+              }
+            } else {
+              summaryMap.set(key, {
+                key,
+                code: it.code,
+                name: it.name,
+                unit: it.unit,
+                category: itemCat,
+                totalQuantity: Number(it.quantity) || 0,
+                defaultUnitPrice: it.unitPrice ?? 250000,
+                defaultTaxRate: it.taxRate ?? 8,
+                defaultNote: it.note || req.purpose || '',
+              });
+            }
+          });
+        });
+
+        const aggregatedRows = Array.from(summaryMap.values()).map((item) => {
+          const override = summaryPricingOverrides[item.key] || {};
+          const unitPrice =
+            override.unitPrice !== undefined ? override.unitPrice : item.defaultUnitPrice;
+          const taxRate =
+            override.taxRate !== undefined ? override.taxRate : item.defaultTaxRate;
+          const note =
+            override.note !== undefined ? override.note : item.defaultNote;
+
+          const amountBeforeTax = item.totalQuantity * unitPrice;
+          const taxAmount = Math.round((amountBeforeTax * taxRate) / 100);
+          const amountAfterTax = amountBeforeTax + taxAmount;
+
+          return {
+            ...item,
+            unitPrice,
+            taxRate,
+            note,
+            amountBeforeTax,
+            taxAmount,
+            amountAfterTax,
+          };
+        });
+
+        const totalAggregatedQty = aggregatedRows.reduce(
+          (sum, r) => sum + r.totalQuantity,
+          0
+        );
+        const totalBeforeTax = aggregatedRows.reduce(
+          (sum, r) => sum + r.amountBeforeTax,
+          0
+        );
+        const totalTaxAmount = aggregatedRows.reduce(
+          (sum, r) => sum + r.taxAmount,
+          0
+        );
+        const totalAfterTax = aggregatedRows.reduce(
+          (sum, r) => sum + r.amountAfterTax,
+          0
+        );
+
+        const formatCurrency = (val: number) =>
+          val.toLocaleString('vi-VN');
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-6xl w-full my-6 overflow-hidden flex flex-col max-h-[92vh]">
+              {/* Header */}
+              <div className="px-6 py-4 bg-teal-50/70 border-b border-teal-200/80 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-teal-600 text-white flex items-center justify-center shadow-xs">
+                    <ClipboardList className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">
+                      Bảng Tổng Hợp Vật Tư Đề Xuất
+                    </h3>
+                    <p className="text-[11px] text-slate-600">
+                      Tổng hợp vật tư dụng cụ theo Hạng mục (Cơ khí, Điện), Thời gian và Phê duyệt
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  {/* Chuyển nhanh vai trò đăng nhập để kiểm tra phân quyền cột Đơn giá/Thuế & quyền sửa Trạng thái */}
+                  <div className="flex items-center gap-1.5 bg-white border border-teal-200 rounded-lg px-2.5 py-1 text-[11px] shadow-2xs">
+                    <ShieldCheck className="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                    <span className="text-slate-500">Vai trò đăng nhập:</span>
+                    {onChangeUserRole ? (
+                      <select
+                        value={currentUserRole}
+                        onChange={(e) => onChangeUserRole(e.target.value as UserRole)}
+                        className="font-bold text-slate-800 bg-transparent focus:outline-none cursor-pointer"
+                        title="Chuyển vai trò đăng nhập để kiểm tra hiển thị cột Đơn giá/Thuế và quyền thay đổi Trạng thái"
+                      >
+                        <option value="Admin/BGĐ">Admin/BGĐ</option>
+                        <option value="BGĐ">BGĐ</option>
+                        <option value="Kế toán">Kế toán</option>
+                        <option value="Phòng HCTC">Phòng HCTC</option>
+                        <option value="Ban KTSC">Ban KTSC</option>
+                        <option value="Ban KTVH">Ban KTVH</option>
+                        <option value="Thủ kho">Thủ kho</option>
+                        <option value="Nhân viên lập phiếu">Nhân viên lập phiếu</option>
+                      </select>
+                    ) : (
+                      <strong className="text-slate-800">{currentUserRole}</strong>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsMaterialSummaryOpen(false)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Filter & Status Bar inside Modal (Đã bỏ Đơn vị đề xuất & Số phiếu đề xuất; Thêm Hạng mục & Trạng thái) */}
+              <div className="px-6 py-3.5 bg-slate-50 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {/* Ô Hạng mục (Cơ khí, Điện) */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 shadow-2xs">
+                    <span className="text-[11px] text-slate-500 font-medium">Hạng mục:</span>
+                    <select
+                      value={requestCategoryFilter}
+                      onChange={(e) =>
+                        setRequestCategoryFilter(e.target.value as 'ALL' | 'Cơ khí' | 'Điện')
+                      }
+                      className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                    >
+                      <option value="ALL">Tất cả hạng mục</option>
+                      <option value="Cơ khí">Cơ khí</option>
+                      <option value="Điện">Điện</option>
+                    </select>
+                  </div>
+
+                  {/* Ô Tháng */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 shadow-2xs">
+                    <span className="text-[11px] text-slate-500 font-medium">Tháng:</span>
+                    <select
+                      value={requestMonthFilter}
+                      onChange={(e) => setRequestMonthFilter(e.target.value)}
+                      className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                    >
+                      <option value="ALL">Tất cả tháng</option>
+                      <option value="01">Tháng 01</option>
+                      <option value="02">Tháng 02</option>
+                      <option value="03">Tháng 03</option>
+                      <option value="04">Tháng 04</option>
+                      <option value="05">Tháng 05</option>
+                      <option value="06">Tháng 06</option>
+                      <option value="07">Tháng 07</option>
+                      <option value="08">Tháng 08</option>
+                      <option value="09">Tháng 09</option>
+                      <option value="10">Tháng 10</option>
+                      <option value="11">Tháng 11</option>
+                      <option value="12">Tháng 12</option>
+                    </select>
+                  </div>
+
+                  {/* Ô Năm */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 shadow-2xs">
+                    <span className="text-[11px] text-slate-500 font-medium">Năm:</span>
+                    <select
+                      value={requestYearFilter}
+                      onChange={(e) => setRequestYearFilter(e.target.value)}
+                      className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                    >
+                      <option value="ALL">Tất cả năm</option>
+                      <option value="2026">Năm 2026</option>
+                      <option value="2025">Năm 2025</option>
+                    </select>
+                  </div>
+
+                  {/* Ô Trạng thái: Mặc định Chờ duyệt, chỉ BGĐ / Kế toán được thay đổi */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 shadow-2xs">
+                    <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                      {canChangeSummaryStatus ? (
+                        <Unlock className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      ) : (
+                        <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      )}
+                      <span>Trạng thái:</span>
+                    </span>
+                    <select
+                      value={
+                        visibleStatusOptions.includes(summaryApprovalStatus)
+                          ? summaryApprovalStatus
+                          : 'Chờ duyệt'
+                      }
+                      disabled={!canChangeSummaryStatus}
+                      onChange={(e) => {
+                        if (canChangeSummaryStatus) {
+                          setSummaryApprovalStatus(e.target.value as SummaryApprovalStatus);
+                        }
+                      }}
+                      title={
+                        canChangeSummaryStatus
+                          ? `Được phép thay đổi bởi vai trò ${currentUserRole}`
+                          : 'Chỉ những người có vai trò là BGĐ, Kế toán được quyền thay đổi'
+                      }
+                      className={`text-xs font-bold focus:outline-none ${
+                        canChangeSummaryStatus
+                          ? 'text-teal-700 bg-transparent cursor-pointer'
+                          : 'text-slate-500 bg-transparent cursor-not-allowed opacity-80'
+                      }`}
+                    >
+                      {visibleStatusOptions.map((st) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 text-xs">
+                  {loggedInDepartment && (
+                    <span className="px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 font-semibold text-blue-700">
+                      Phòng ban: <strong>{loggedInDepartment}</strong>
+                    </span>
+                  )}
+                  <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 font-semibold text-slate-700">
+                    Tổng mặt hàng: <strong className="text-teal-700">{aggregatedRows.length}</strong>
+                  </span>
+                </div>
+              </div>
+
+              {/* Form Ghi chú bên dưới khi chọn Duyệt có ghi chú (Phòng HCTC Duyệt có ghi chú / BGĐ Duyệt có ghi chú) */}
+              {isNoteRequired && (
+                <div className="px-6 py-3.5 bg-amber-50/80 border-b border-amber-200 animate-in fade-in duration-150">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                    <label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                      <MessageSquarePlus className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span>Form Ghi chú phê duyệt ({summaryApprovalStatus}):</span>
+                    </label>
+                    <span className="text-[11px] text-amber-700">
+                      Nhập nội dung ghi chú điều chỉnh số lượng, đơn giá hoặc yêu cầu bổ sung
+                    </span>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={summaryApprovalNote}
+                      disabled={!canChangeSummaryStatus}
+                      onChange={(e) => setSummaryApprovalNote(e.target.value)}
+                      placeholder="Nhập ghi chú duyệt cho bảng tổng hợp vật tư..."
+                      className="flex-1 px-3 py-2 bg-white border border-amber-300 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 disabled:bg-slate-100"
+                    />
+                    {canChangeSummaryStatus && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onShowToast(
+                            `Đã lưu trạng thái "${summaryApprovalStatus}" kèm ghi chú phê duyệt!`
+                          );
+                        }}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
+                      >
+                        Lưu ghi chú duyệt
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Aggregated Table: STT, Tên vật tư dụng cụ, ĐVT, Số lượng, [Đơn giá, Thành tiền trước thuế, Thuế suất, Tiền thuế, Thành tiền sau thuế], Ghi chú */}
+              <div className="p-6 overflow-y-auto flex-1">
+                <div className="border border-slate-200 rounded-xl overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead className="bg-slate-100 text-slate-700 font-semibold uppercase text-[11px] border-b border-slate-200">
+                      <tr>
+                        <th className="py-2.5 px-3 text-center w-12">STT</th>
+                        <th className="py-2.5 px-3 min-w-[210px]">Tên vật tư dụng cụ</th>
+                        <th className="py-2.5 px-3 text-center w-20">ĐVT</th>
+                        <th className="py-2.5 px-3 text-right w-24">Số lượng</th>
+                        {canViewFinancialColumns && (
+                          <>
+                            <th className="py-2.5 px-3 text-right min-w-[130px]">Đơn giá</th>
+                            <th className="py-2.5 px-3 text-right min-w-[140px]">
+                              Thành tiền trước thuế
+                            </th>
+                            <th className="py-2.5 px-3 text-center w-28">Thuế suất</th>
+                            <th className="py-2.5 px-3 text-right min-w-[120px]">Tiền thuế</th>
+                            <th className="py-2.5 px-3 text-right min-w-[145px]">
+                              Thành tiền sau thuế
+                            </th>
+                          </>
+                        )}
+                        <th className="py-2.5 px-3 min-w-[170px]">Ghi chú</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {aggregatedRows.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={canViewFinancialColumns ? 10 : 5}
+                            className="py-8 text-center text-slate-400"
+                          >
+                            Không có vật tư dụng cụ đề xuất nào phù hợp với bộ lọc.
+                          </td>
+                        </tr>
+                      ) : (
+                        aggregatedRows.map((item, idx) => (
+                          <tr key={item.key + idx} className="hover:bg-slate-50/80">
+                            {/* 1. STT */}
+                            <td className="py-2.5 px-3 text-center font-mono text-slate-500">
+                              {idx + 1}
+                            </td>
+
+                            {/* 2. Tên vật tư dụng cụ */}
+                            <td className="py-2.5 px-3">
+                              <div className="font-semibold text-slate-800">{item.name}</div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="font-mono text-[10px] text-blue-700 font-semibold">
+                                  {item.code}
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                  {item.category}
+                                </span>
+                              </div>
+                            </td>
+
+                            {/* 3. ĐVT */}
+                            <td className="py-2.5 px-3 text-center text-slate-600 font-medium">
+                              {item.unit}
+                            </td>
+
+                            {/* 4. Số lượng */}
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-teal-700">
+                              {item.totalQuantity}
+                            </td>
+
+                            {/* 5 - 9. Các cột tài chính (Chỉ hiển thị khi vai trò là Admin/BGĐ, BGĐ, Kế toán) */}
+                            {canViewFinancialColumns && (
+                              <>
+                                {/* 5. Đơn giá (Nhập tay) */}
+                                <td className="py-2 px-3 text-right">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    step={1000}
+                                    value={item.unitPrice}
+                                    onChange={(e) => {
+                                      const val = Math.max(0, Number(e.target.value) || 0);
+                                      setSummaryPricingOverrides((prev) => ({
+                                        ...prev,
+                                        [item.key]: {
+                                          ...prev[item.key],
+                                          unitPrice: val,
+                                        },
+                                      }));
+                                    }}
+                                    className="w-28 px-2 py-1 text-right bg-white border border-slate-300 rounded-lg font-mono font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                                  />
+                                </td>
+
+                                {/* 6. Thành tiền trước thuế (Tự động tính) */}
+                                <td className="py-2.5 px-3 text-right font-mono font-semibold text-slate-800 tabular-nums">
+                                  {formatCurrency(item.amountBeforeTax)}
+                                </td>
+
+                                {/* 7. Thuế suất (Nhập tay %) */}
+                                <td className="py-2 px-3 text-center">
+                                  <div className="inline-flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      max={100}
+                                      step={1}
+                                      value={item.taxRate}
+                                      onChange={(e) => {
+                                        const val = Math.max(0, Number(e.target.value) || 0);
+                                        setSummaryPricingOverrides((prev) => ({
+                                          ...prev,
+                                          [item.key]: {
+                                            ...prev[item.key],
+                                            taxRate: val,
+                                          },
+                                        }));
+                                      }}
+                                      className="w-16 px-2 py-1 text-right bg-white border border-slate-300 rounded-lg font-mono font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                                    />
+                                    <span className="text-slate-500 font-semibold">%</span>
+                                  </div>
+                                </td>
+
+                                {/* 8. Tiền thuế (Tự động tính) */}
+                                <td className="py-2.5 px-3 text-right font-mono font-medium text-amber-700 tabular-nums">
+                                  {formatCurrency(item.taxAmount)}
+                                </td>
+
+                                {/* 9. Thành tiền sau thuế (Tự động tính) */}
+                                <td className="py-2.5 px-3 text-right font-mono font-bold text-blue-700 tabular-nums">
+                                  {formatCurrency(item.amountAfterTax)}
+                                </td>
+                              </>
+                            )}
+
+                            {/* 10. Ghi chú */}
+                            <td className="py-2 px-3">
+                              <input
+                                type="text"
+                                value={item.note}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setSummaryPricingOverrides((prev) => ({
+                                    ...prev,
+                                    [item.key]: {
+                                      ...prev[item.key],
+                                      note: val,
+                                    },
+                                  }));
+                                }}
+                                placeholder="Nhập ghi chú..."
+                                className="w-full px-2 py-1 bg-white border border-slate-200 rounded-lg text-xs text-slate-700 focus:outline-none focus:border-teal-400"
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                    {aggregatedRows.length > 0 && (
+                      <tfoot className="bg-slate-50 border-t border-slate-200 font-bold text-xs">
+                        <tr>
+                          <td colSpan={3} className="py-2.5 px-3 text-right text-slate-700">
+                            Tổng cộng:
+                          </td>
+                          <td className="py-2.5 px-3 text-right font-mono text-teal-700">
+                            {totalAggregatedQty}
+                          </td>
+                          {canViewFinancialColumns && (
+                            <>
+                              <td className="py-2.5 px-3"></td>
+                              <td className="py-2.5 px-3 text-right font-mono text-slate-900 tabular-nums">
+                                {formatCurrency(totalBeforeTax)}
+                              </td>
+                              <td className="py-2.5 px-3"></td>
+                              <td className="py-2.5 px-3 text-right font-mono text-amber-700 tabular-nums">
+                                {formatCurrency(totalTaxAmount)}
+                              </td>
+                              <td className="py-2.5 px-3 text-right font-mono text-blue-700 tabular-nums">
+                                {formatCurrency(totalAfterTax)}
+                              </td>
+                            </>
+                          )}
+                          <td className="py-2.5 px-3"></td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-[11px] text-slate-600">
+                  <span>Trạng thái bảng tổng hợp:</span>
+                  {renderStatusBadge(summaryApprovalStatus)}
+                  {!canViewFinancialColumns && (
+                    <span className="text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                      Các cột Đơn giá & Thuế chỉ hiển thị cho vai trò Admin/BGĐ, Kế toán
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onShowToast('Đã xuất file Tổng hợp vật tư đề xuất!');
+                    }}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Xuất bảng tổng hợp</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsMaterialSummaryOpen(false)}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Đóng
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

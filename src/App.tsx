@@ -17,6 +17,7 @@ import {
 import {
   NavigationModule,
   WarehouseModuleId,
+  UserRole,
 } from './types/warehouse';
 import {
   Check,
@@ -34,6 +35,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [currentUserRole, setCurrentUserRole] = useState<UserRole>('Admin/BGĐ');
 
   // Active module object if selected
   const activeModule = ALL_MODULES.find((m) => m.id === activeModuleId);
@@ -56,7 +58,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/70 flex flex-row text-slate-800 font-sans">
+    <div className="min-h-screen bg-[#F4F7FB] flex flex-row text-slate-800 font-sans">
       {/* 1. Thanh điều hướng bên trái (Sidebar nền sáng: Thủy điện Sơn Trà 1, 6 phân hệ) */}
       <Sidebar
         currentNav={currentNav}
@@ -87,6 +89,11 @@ export default function App() {
             setCurrentNav('warehouse');
             setActiveModuleId(null);
           }}
+          currentUserRole={currentUserRole}
+          onChangeUserRole={(role) => {
+            setCurrentUserRole(role);
+            handleShowToast(`Đã chuyển chức vụ đăng nhập sang: ${role}`);
+          }}
         />
 
         {/* Thanh thao tác phụ ngay dưới Top bar: Ô tìm kiếm nổi bật */}
@@ -98,7 +105,7 @@ export default function App() {
         )}
 
         {/* 3 & 4. Khu vực nội dung chính */}
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-6 max-w-[1600px] w-full mx-auto">
           {/* Màn hình Trang chủ (Home Launcher) */}
           {currentNav === 'home' && (
             <HomeLauncher
@@ -123,6 +130,11 @@ export default function App() {
                   module={activeModule}
                   onBackToHub={() => setActiveModuleId(null)}
                   onShowToast={handleShowToast}
+                  currentUserRole={currentUserRole}
+                  onChangeUserRole={(role) => {
+                    setCurrentUserRole(role);
+                    handleShowToast(`Đã chuyển chức vụ đăng nhập sang: ${role}`);
+                  }}
                 />
               ) : (
                 /* Phân nhóm thẻ Kho vận & Bố cục lưới 4 cột */

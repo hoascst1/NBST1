@@ -6,6 +6,25 @@ export type NavigationModule =
   | 'documents'
   | 'system';
 
+export type UserRole =
+  | 'Admin/BGĐ'
+  | 'BGĐ'
+  | 'Kế toán'
+  | 'Phòng HCTC'
+  | 'Ban KTSC'
+  | 'Ban KTVH'
+  | 'Thủ kho'
+  | 'Nhân viên lập phiếu';
+
+export type SummaryApprovalStatus =
+  | 'Chờ duyệt'
+  | 'Phòng HCTC Đã duyệt'
+  | 'Phòng HCTC Từ chối'
+  | 'Phòng HCTC Duyệt có ghi chú'
+  | 'BGĐ Đã duyệt'
+  | 'BGĐ Từ chối'
+  | 'BGĐ Duyệt có ghi chú';
+
 export type WarehouseModuleId =
   | 'phieu-kho'
   | 'de-xuat-vat-tu'
@@ -58,10 +77,24 @@ export interface ModuleGroup {
   modules: WarehouseModule[];
 }
 
+export interface StockSlipItem {
+  id: string;
+  name: string;
+  code: string;
+  unit: string;
+  quantity: number;
+  category?: 'Cơ khí' | 'Điện';
+  unitPrice?: number;
+  taxRate?: number;
+  note?: string;
+}
+
 export interface StockSlip {
   id: string;
   code: string;
   type: 'Nhập kho' | 'Xuất kho' | 'Chuyển kho';
+  deliverer?: string;
+  receiver?: string;
   warehouseSource?: string;
   warehouseTarget?: string;
   createdAt: string;
@@ -71,20 +104,25 @@ export interface StockSlip {
   totalValue?: string;
   status: 'Đã duyệt' | 'Chờ duyệt' | 'Đang xử lý' | 'Đã hủy';
   note?: string;
+  items?: StockSlipItem[];
 }
 
 export interface MaterialRequest {
   id: string;
   code: string;
-  department: string;
-  location: string;
-  requester: string;
-  approver: string;
-  requestDate: string;
-  requiredDate: string;
+  requestDate: string; // Thời gian (DD/MM/YYYY)
+  department: 'Ban KTSC' | 'Ban KTVH' | 'Ban HCTC' | string; // Phòng ban / Đơn vị đề xuất
+  category?: 'Cơ khí' | 'Điện'; // Hạng mục (Cơ khí, Điện)
+  requester: string; // Người đề xuất
+  purpose: string; // Mục đích
+  approvalLevel: 'Ban KTSC' | 'Ban KTVH' | 'Ban HCTC'; // Cấp duyệt
+  urgency: 'Bình thường' | 'Gấp' | 'Khẩn cấp'; // Mức độ
+  status: 'Đã phê duyệt' | 'Chờ duyệt' | 'Từ chối' | string; // Trạng thái
+  location?: string;
+  approver?: string;
+  requiredDate?: string;
   itemCount: number;
-  urgency: 'Bình thường' | 'Gấp' | 'Khẩn cấp';
-  status: 'Đã phê duyệt' | 'Chờ duyệt' | 'Từ chối';
+  items?: StockSlipItem[];
 }
 
 export interface StockHistoryItem {
